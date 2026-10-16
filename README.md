@@ -69,14 +69,16 @@ servers. Cilium provides pod networking across the cluster.
    restrict it to trusted administrator networks.
 
 The registry uses a Longhorn `ReadWriteMany` volume with three replicas by
-default, and runs two registry pods. Set `kubernetes_longhorn_replica_count`
-and `kubernetes_registry_storage_size` to match your capacity and durability
-requirements. With the default 50 GiB claim and three replicas, allow about
-150 GiB of raw capacity across the storage nodes. Longhorn stores replicas on
-separate nodes; keep adequate free disk space on at least that many worker
-nodes. Two registry pods are scheduled on different nodes. A single controller
-failure does not lose the registry volume, provided the Longhorn prerequisites
-are met and healthy replicas exist on surviving nodes; volume/share-manager
+default, and runs two registry pods. The default claim size is 8 GiB; with
+three replicas, allow about 24 GiB of raw capacity across the storage nodes.
+Set `kubernetes_longhorn_replica_count` and
+`kubernetes_registry_storage_size` to match your capacity and durability
+requirements. Longhorn CSI, manager, and engine-image components run on
+controllers so workloads there can mount and attach volumes, but controller
+disks are excluded from replica placement. Replicas stay on separate workers.
+Two registry pods are scheduled on different nodes. A single controller failure
+does not lose the registry volume, provided the Longhorn prerequisites are met
+and healthy replicas exist on surviving nodes; volume/share-manager
 reattachment can cause a brief interruption while Kubernetes and Longhorn
 recover.
 

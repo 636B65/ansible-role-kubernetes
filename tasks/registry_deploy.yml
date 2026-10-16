@@ -46,6 +46,184 @@
   tags:
     - registry_deploy
 
+- name: Inspect an existing registry storage claim before resizing
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - pvc
+      - registry-data
+      - --namespace
+      - "{{ kubernetes_registry_namespace }}"
+      - --output
+      - json
+  register: kubernetes_registry_existing_pvc
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Inspect the Longhorn volume behind the current registry claim
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - volumes.longhorn.io
+      - "{{ (kubernetes_registry_existing_pvc.stdout | from_json).spec.volumeName }}"
+      - --namespace
+      - longhorn-system
+      - --output
+      - json
+  register: kubernetes_registry_existing_volume
+  changed_when: false
+  failed_when: false
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_existing_pvc.rc == 0
+  tags:
+    - registry_deploy
+
+- name: Require the existing Longhorn volume to be inspectable before proceeding
+  ansible.builtin.assert:
+    that:
+      - kubernetes_registry_existing_volume.rc == 0
+    fail_msg: >-
+      Existing registry PVC registry-data refers to a Longhorn volume that
+      could not be inspected. No storage claim will be deleted or resized.
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_existing_pvc.rc == 0
+  tags:
+    - registry_deploy
+
+- name: Inspect existing Longhorn replicas before replacing a failed empty volume
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - replicas.longhorn.io
+      - --namespace
+      - longhorn-system
+      - --output
+      - json
+  register: kubernetes_registry_existing_replicas
+  changed_when: false
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_existing_pvc.rc == 0
+    - kubernetes_registry_existing_volume.rc == 0
+  tags:
+    - registry_deploy
+
+- name: Determine whether the old failed empty registry claim can be replaced safely
+  ansible.builtin.set_fact:
+    kubernetes_registry_replace_failed_empty_volume: >-
+      {{
+        (kubernetes_registry_existing_pvc.stdout | from_json).spec.resources.requests.storage
+        != kubernetes_registry_storage_size
+        and (kubernetes_registry_existing_volume.stdout | from_json).status.state == 'detached'
+        and (kubernetes_registry_existing_volume.stdout | from_json).status.robustness == 'faulted'
+        and (kubernetes_registry_existing_volume.stdout | from_json).status.actualSize | int == 0
+        and
+        (
+          (kubernetes_registry_existing_replicas.stdout | from_json)['items']
+          | selectattr(
+              'spec.volumeName',
+              'equalto',
+              (kubernetes_registry_existing_pvc.stdout | from_json).spec.volumeName
+            )
+          | length
+        ) == 0
+      }}
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_existing_pvc.rc == 0
+    - kubernetes_registry_existing_volume.rc == 0
+  tags:
+    - registry_deploy
+
+- name: Refuse to shrink or replace a registry volume that may contain data
+  ansible.builtin.assert:
+    that:
+      - >-
+        (kubernetes_registry_existing_pvc.stdout | from_json).spec.resources.requests.storage
+        == kubernetes_registry_storage_size
+        or kubernetes_registry_replace_failed_empty_volume | default(false)
+        or (kubernetes_registry_existing_volume.stdout | from_json).status.state != 'detached'
+        or (kubernetes_registry_existing_volume.stdout | from_json).status.robustness != 'faulted'
+        or (kubernetes_registry_existing_volume.stdout | from_json).status.actualSize | int != 0
+    fail_msg: >-
+      The current registry claim has a different size and its Longhorn volume
+      is not a detached, faulted, empty volume with no replicas. Back up and
+      migrate that volume manually instead of deleting it.
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_existing_pvc.rc == 0
+    - kubernetes_registry_existing_volume.rc == 0
+  tags:
+    - registry_deploy
+
+- name: Change the unused failed registry PV policy to delete
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - patch
+      - pv
+      - "{{ (kubernetes_registry_existing_pvc.stdout | from_json).spec.volumeName }}"
+      - --type=merge
+      - --patch
+      - '{"spec":{"persistentVolumeReclaimPolicy":"Delete"}}'
+  register: kubernetes_registry_empty_pv_policy
+  changed_when: >-
+    'patched' in kubernetes_registry_empty_pv_policy.stdout
+    and '(no change)' not in kubernetes_registry_empty_pv_policy.stdout
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_replace_failed_empty_volume | default(false)
+  tags:
+    - registry_deploy
+
+- name: Remove the unused failed registry claim so Longhorn can provision the smaller volume
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - delete
+      - pvc
+      - registry-data
+      - --namespace
+      - "{{ kubernetes_registry_namespace }}"
+      - --wait=true
+      - --timeout=300s
+  register: kubernetes_registry_empty_pvc_delete
+  changed_when: "'deleted' in kubernetes_registry_empty_pvc_delete.stdout"
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_replace_failed_empty_volume | default(false)
+  tags:
+    - registry_deploy
+
+- name: Wait for Longhorn to delete the unused failed empty volume
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - volumes.longhorn.io
+      - "{{ (kubernetes_registry_existing_pvc.stdout | from_json).spec.volumeName }}"
+      - --namespace
+      - longhorn-system
+  register: kubernetes_registry_empty_volume_delete
+  changed_when: false
+  failed_when: false
+  retries: 60
+  delay: 5
+  until: kubernetes_registry_empty_volume_delete.rc != 0
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_replace_failed_empty_volume | default(false)
+  tags:
+    - registry_deploy
+
 - name: Create the replicated registry storage class and claim
   ansible.builtin.template:
     src: registry-storage.yml.j2

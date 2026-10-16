@@ -8,7 +8,7 @@
     role_root: "{{ playbook_dir | dirname }}"
     kubernetes_registry_namespace: local-registry
     kubernetes_registry_storage_class: kubernetes-registry-longhorn
-    kubernetes_registry_storage_size: 50Gi
+    kubernetes_registry_storage_size: 8Gi
     kubernetes_registry_replicas: 2
     kubernetes_registry_node_port: 30500
     kubernetes_registry_image: registry:2

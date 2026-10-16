@@ -4,10 +4,12 @@
     that:
       - kubernetes_longhorn_replica_count | int >= 2
       - kubernetes_registry_replicas | int >= 2
+      - groups[kubernetes_worker_group] | length >= kubernetes_registry_replicas | int
       - groups[kubernetes_worker_group] | length >= kubernetes_longhorn_replica_count | int
     fail_msg: >-
       Longhorn registry storage needs at least {{ kubernetes_longhorn_replica_count }}
-      worker nodes to keep replicas on separate nodes and tolerate a controller failure.
+      worker nodes to keep replicas on separate nodes and tolerate a controller failure,
+      and at least {{ kubernetes_registry_replicas }} workers for registry pod anti-affinity.
   run_once: true
   tags:
     - longhorn
@@ -92,6 +94,90 @@
   tags:
     - longhorn
 
+- name: Allow Longhorn managers to run on tainted control-plane nodes
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - patch
+      - daemonset
+      - longhorn-manager
+      - --namespace
+      - longhorn-system
+      - --type=strategic
+      - --patch
+      - >-
+        {"spec":{"template":{"spec":{"tolerations":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]}}}}
+  register: kubernetes_longhorn_manager_tolerations
+  changed_when: >-
+    'patched' in kubernetes_longhorn_manager_tolerations.stdout
+    and '(no change)' not in kubernetes_longhorn_manager_tolerations.stdout
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Allow the Longhorn CSI plugin to run on tainted control-plane nodes
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - patch
+      - daemonset
+      - longhorn-csi-plugin
+      - --namespace
+      - longhorn-system
+      - --type=strategic
+      - --patch
+      - >-
+        {"spec":{"template":{"spec":{"tolerations":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]}}}}
+  register: kubernetes_longhorn_csi_tolerations
+  changed_when: >-
+    'patched' in kubernetes_longhorn_csi_tolerations.stdout
+    and '(no change)' not in kubernetes_longhorn_csi_tolerations.stdout
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Find the Longhorn engine image daemonsets
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - daemonsets
+      - --namespace
+      - longhorn-system
+      - --selector
+      - longhorn.io/component=engine-image
+      - --output
+      - name
+  register: kubernetes_longhorn_engine_image_daemonsets
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: kubernetes_longhorn_engine_image_daemonsets.stdout_lines | length > 0
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Allow Longhorn engine images to run on tainted control-plane nodes
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - patch
+      - "{{ item }}"
+      - --namespace
+      - longhorn-system
+      - --type=strategic
+      - --patch
+      - >-
+        {"spec":{"template":{"spec":{"tolerations":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]}}}}
+  register: kubernetes_longhorn_engine_image_tolerations
+  changed_when: >-
+    'patched' in kubernetes_longhorn_engine_image_tolerations.stdout
+    and '(no change)' not in kubernetes_longhorn_engine_image_tolerations.stdout
+  loop: "{{ kubernetes_longhorn_engine_image_daemonsets.stdout_lines | default([]) }}"
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
 - name: Wait for Longhorn managers on all cluster nodes
   ansible.builtin.command:
     argv:
@@ -103,6 +189,107 @@
       - longhorn-system
       - --timeout=600s
   changed_when: false
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Wait for Longhorn CSI plugins on all cluster nodes
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - daemonset/longhorn-csi-plugin
+      - --namespace
+      - longhorn-system
+      - --timeout=600s
+  changed_when: false
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Wait for Longhorn engine images on all cluster nodes
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - engineimages.longhorn.io
+      - --namespace
+      - longhorn-system
+      - --output
+      - json
+  register: kubernetes_longhorn_engine_images
+  changed_when: false
+  retries: 60
+  delay: 10
+  until: >-
+    (kubernetes_longhorn_engine_images.stdout | from_json)['items']
+    | selectattr('status.nodeDeploymentMap.' ~ item, 'equalto', true)
+    | list
+    | length > 0
+  loop: "{{ groups[kubernetes_control_plane_group] + groups[kubernetes_worker_group] }}"
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Wait for Longhorn node objects on control-plane nodes
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - nodes.longhorn.io
+      - "{{ item }}"
+      - --namespace
+      - longhorn-system
+  register: kubernetes_longhorn_control_plane_node
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: kubernetes_longhorn_control_plane_node.rc == 0
+  loop: "{{ groups[kubernetes_control_plane_group] }}"
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Keep control-plane disks out of Longhorn replica placement
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - patch
+      - nodes.longhorn.io
+      - "{{ item }}"
+      - --namespace
+      - longhorn-system
+      - --type=merge
+      - --patch
+      - '{"spec":{"allowScheduling":false}}'
+  register: kubernetes_longhorn_control_plane_scheduling
+  changed_when: >-
+    'patched' in kubernetes_longhorn_control_plane_scheduling.stdout
+    and '(no change)' not in kubernetes_longhorn_control_plane_scheduling.stdout
+  retries: 30
+  delay: 10
+  until: kubernetes_longhorn_control_plane_scheduling.rc == 0
+  loop: "{{ groups[kubernetes_control_plane_group] }}"
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Verify Longhorn CSI registration on each control-plane node
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - csinode
+      - "{{ item }}"
+      - --output
+      - "jsonpath={.spec.drivers[?(@.name=='driver.longhorn.io')].name}"
+  register: kubernetes_longhorn_csi_registration
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: kubernetes_longhorn_csi_registration.stdout == "driver.longhorn.io"
+  loop: "{{ groups[kubernetes_control_plane_group] }}"
   when: inventory_hostname == kubernetes_registry_node
   tags:
     - longhorn
