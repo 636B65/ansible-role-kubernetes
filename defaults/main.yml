@@ -29,8 +29,11 @@ kubernetes_longhorn_replica_count: 3
 kubernetes_registry_images:
   - source: docker.io/library/ubuntu:latest
     destination: ubuntu:latest
-  - source: docker.io/ubuntu/nginx:latest
-    destination: nginx:latest
+  - source: docker.io/library/nginx:stable
+    destination: nginx:stable
+
+kubernetes_offline_assets_directory: /opt/kubernetes-offline
+kubernetes_helm_releases_url: https://api.github.com/repos/helm/helm/releases?per_page=100
 
 haproxy_stats_bind_address: "*"
 haproxy_stats_port: 8404

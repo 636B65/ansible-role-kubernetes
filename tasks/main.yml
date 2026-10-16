@@ -128,3 +128,10 @@
   tags:
     - registry
     - registry_images
+
+- name: Stage Cilium LoadBalancer assets for offline use
+  ansible.builtin.import_tasks: cilium_offline.yml
+  tags:
+    - registry
+    - registry_images
+    - cilium_offline

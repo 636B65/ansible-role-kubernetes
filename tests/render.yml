@@ -15,6 +15,7 @@
     kubernetes_registry_node: test-cp
     kubernetes_registry_storage_path: /var/lib/kubernetes-registry
     kubernetes_longhorn_replica_count: 3
+    kubernetes_registry_http_secret_value: test-registry-secret
   tasks:
     - name: Render the Longhorn registry storage class
       ansible.builtin.template:
@@ -40,14 +41,23 @@
         dest: "{{ test_output_dir }}/kubernetes-registry-migration.yml"
         mode: "0600"
 
+    - name: Render the shared registry HTTP secret
+      ansible.builtin.template:
+        src: "{{ role_root }}/templates/registry-http-secret.yml.j2"
+        dest: "{{ test_output_dir }}/kubernetes-registry-http-secret.yml"
+        mode: "0600"
+
     - name: Verify registry storage and availability settings
       ansible.builtin.assert:
         that:
           - "'numberOfReplicas: \"3\"' in lookup('file', test_output_dir ~ '/kubernetes-registry-storage-class.yml')"
           - "'accessModes:\\n    - ReadWriteMany' in lookup('file', test_output_dir ~ '/kubernetes-registry-storage.yml')"
           - "'replicas: 2' in lookup('file', test_output_dir ~ '/kubernetes-registry.yml')"
+          - "'name: REGISTRY_HTTP_SECRET' in lookup('file', test_output_dir ~ '/kubernetes-registry.yml')"
+          - "'kubernetes-image-registry-http' in lookup('file', test_output_dir ~ '/kubernetes-registry.yml')"
           - "'requiredDuringSchedulingIgnoredDuringExecution' in lookup('file', test_output_dir ~ '/kubernetes-registry.yml')"
           - "'claimName: registry-data' in lookup('file', test_output_dir ~ '/kubernetes-registry.yml')"
+          - "(lookup('file', test_output_dir ~ '/kubernetes-registry-http-secret.yml') | from_yaml).data['http-secret'] | b64decode == kubernetes_registry_http_secret_value"
           - "'cp -a /legacy/. /replicated/' in lookup('file', test_output_dir ~ '/kubernetes-registry-migration.yml')"
           - "(lookup('file', test_output_dir ~ '/kubernetes-registry-storage-class.yml') | from_yaml).parameters.numberOfReplicas == '3'"
           - "(lookup('file', test_output_dir ~ '/kubernetes-registry-storage.yml') | from_yaml_all | list)[1].spec.accessModes == ['ReadWriteMany']"
@@ -70,3 +80,5 @@
           - rendered_registry_documents[0].spec.replicas | int == 2
           - rendered_registry_documents[1].kind == 'Service'
           - rendered_registry_documents[2].kind == 'PodDisruptionBudget'
+          - rendered_registry_documents[0].spec.template.spec.containers[0].env[0].name == 'REGISTRY_HTTP_SECRET'
+          - rendered_registry_documents[0].spec.template.spec.containers[0].env[0].valueFrom.secretKeyRef.key == 'http-secret'

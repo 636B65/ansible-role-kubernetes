@@ -9,11 +9,13 @@
   tags:
     - registry_images
 
-- name: Copy the selected Ubuntu-based images into the internal registry
+- name: Copy configured images into the internal registry
   ansible.builtin.command:
     argv:
       - skopeo
       - copy
+      - --retry-times
+      - "3"
       - --all
       - --dest-tls-verify=false
       - "docker://{{ item.source }}"
@@ -21,6 +23,9 @@
   loop: "{{ kubernetes_registry_images }}"
   register: kubernetes_registry_image_copy
   changed_when: true
+  retries: 3
+  delay: 10
+  until: kubernetes_registry_image_copy.rc == 0
   when: inventory_hostname == kubernetes_registry_node
   tags:
     - registry_images

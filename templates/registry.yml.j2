@@ -32,6 +32,12 @@ spec:
         - name: registry
           image: {{ kubernetes_registry_image }}
           imagePullPolicy: IfNotPresent
+          env:
+            - name: REGISTRY_HTTP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: kubernetes-image-registry-http
+                  key: http-secret
           ports:
             - name: registry
               containerPort: 5000

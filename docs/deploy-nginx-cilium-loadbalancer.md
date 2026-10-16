@@ -1,14 +1,18 @@
 # Deploy NGINX with a Cilium LoadBalancer
 
-This guide deploys the public `nginx:stable` container image and exposes it
-through a Kubernetes `Service` of type `LoadBalancer`. It uses Cilium LB IPAM
-to allocate a service IP and Cilium L2 Announcements to advertise that IP on
-the local network. It is intended for a bare-metal/on-premises cluster where
-the nodes and clients share a Layer 2 network.
+This guide deploys the `nginx:stable` image staged in the cluster's local
+registry and exposes it through a Kubernetes `Service` of type `LoadBalancer`.
+It uses Cilium LB IPAM to allocate a service IP and Cilium L2 Announcements to
+advertise that IP on the local network. It is intended for a bare-metal/on-premises
+cluster where the nodes and clients share a Layer 2 network.
 
 ## Before you start
 
 - The cluster is installed and `kubectl` works with the cluster.
+- The role has completed its `registry_images` tasks while internet access was
+  available. It stages the installed Cilium chart and all images rendered from
+  the active Cilium Helm values on each controller, and copies those images to
+  the internal registry.
 - Cilium is healthy. The role installs Cilium for pod networking, but its
   current bootstrap configuration sets `kubeProxyReplacement=false` and does
   not enable L2 Announcements. Cilium L2 Announcements require kube-proxy
@@ -31,33 +35,46 @@ existing connections. Schedule this change as cluster maintenance and follow
 the Cilium upgrade/migration guidance for the installed version. Do not remove
 the kube-proxy DaemonSet as an ad hoc step.
 
-On a control-plane node, use Helm (the role installs the Cilium CLI but does
-not install Helm) to check the installed chart version:
+The offline assets are stored under `/opt/kubernetes-offline` on each
+controller. The role installs Helm and saves the chart archive there. Find the
+staged chart version on a control-plane node:
 
 ```sh
-helm list --namespace kube-system
+ls -1 /opt/kubernetes-offline/cilium/
 ```
 
-Use the installed Cilium chart version in the upgrade command so this change
-does not unintentionally upgrade Cilium. Replace `<installed-version>` with
-the version shown in the `CHART` column (without the `cilium-` prefix), and
-replace `<API-VIP>` with the `kubernetes_api_vip` configured for this cluster.
-The API VIP listens on port `8443` in the role's example configuration.
+Set `API_VIP` to the configured `kubernetes_api_vip`. The API VIP listens on
+port `8443` in the role's example configuration. The commands below read the
+Cilium and Envoy versions from the running DaemonSets. They use only the local
+chart and local registry; they do not access a Helm repository or upstream
+image registry.
 
 ```sh
-helm repo add cilium https://helm.cilium.io/
-helm repo update
+export KUBECONFIG=/etc/kubernetes/admin.conf
+API_VIP=192.168.1.100
+REGISTRY=registry.k8s.local:30500
+CILIUM_IMAGE="$(kubectl --namespace kube-system get daemonset cilium \
+  --output=jsonpath='{.spec.template.spec.containers[0].image}')"
+CILIUM_IMAGE="${CILIUM_IMAGE%%@*}"
+CILIUM_VERSION="${CILIUM_IMAGE##*:}"
+ENVOY_IMAGE="$(kubectl --namespace kube-system get daemonset cilium-envoy \
+  --output=jsonpath='{.spec.template.spec.containers[0].image}')"
+ENVOY_IMAGE="${ENVOY_IMAGE%%@*}"
+ENVOY_TAG="${ENVOY_IMAGE##*:}"
 
-helm upgrade cilium cilium/cilium \
-  --version <installed-version> \
+helm upgrade cilium \
+  "/opt/kubernetes-offline/cilium/cilium-${CILIUM_VERSION}.tgz" \
   --namespace kube-system \
   --reuse-values \
   --set kubeProxyReplacement=true \
-  --set k8sServiceHost=<API-VIP> \
+  --set k8sServiceHost="${API_VIP}" \
   --set k8sServicePort=8443 \
   --set l2announcements.enabled=true \
   --set k8sClientRateLimit.qps=20 \
-  --set k8sClientRateLimit.burst=100
+  --set k8sClientRateLimit.burst=100 \
+  --set image.override="${REGISTRY}/cilium/cilium:${CILIUM_VERSION}" \
+  --set operator.image.override="${REGISTRY}/cilium/operator-generic:${CILIUM_VERSION}" \
+  --set envoy.image.override="${REGISTRY}/cilium/cilium-envoy:${ENVOY_TAG}"
 ```
 
 The API VIP and port let Cilium reach the Kubernetes API while it configures
@@ -65,6 +82,19 @@ service handling. The QPS and burst values are starting values for a small
 cluster; monitor Cilium and API-server logs for throttling and tune them for
 your cluster. If the Cilium Helm `devices` option is explicitly configured,
 make sure it includes the node interface connected to the client LAN.
+The Envoy tag changes independently of the Cilium version; the commands above
+read it from the running Envoy DaemonSet. The role mirrors every image in the
+currently installed chart rendering, including any components enabled in its
+Helm values.
+
+The role’s first-time Kubernetes and Cilium bootstrap still downloads OS
+packages, the Cilium CLI, and initial cluster images from upstream. The local
+registry is inside Kubernetes and cannot bootstrap an empty cluster. Run the
+role with internet access and wait for registry image staging to finish before
+exporting the VMs. Export all six VMs, including the worker disks holding the
+Longhorn registry replicas, as one cluster. After importing, bring up the full
+cluster so the replicated registry volume is available; the chart, Helm, and
+Cilium CLI are also retained on every controller.
 
 Wait for Cilium to recover and confirm its status before continuing:
 
@@ -140,7 +170,7 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: nginx:stable
+          image: registry.k8s.local:30500/nginx:stable
           ports:
             - name: http
               containerPort: 80

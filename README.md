@@ -52,9 +52,17 @@ client support enabled on every node.
 
 The role targets Debian-family systems with `apt`, Python, SSH, and root
 privilege escalation. The control-plane nodes need at least 2 CPU cores for
-the kubeadm setup. All nodes need network access to the configured package and
-image repositories, connectivity to one another for Kubernetes/Cilium/Longhorn
-traffic, and synchronized clocks.
+the kubeadm setup. Initial installation requires internet access to configured
+package and image repositories. To prepare for later offline use, the role
+also installs Helm and the Cilium CLI on each controller, saves their release
+archives and the installed Cilium chart under `/opt/kubernetes-offline`, and
+mirrors every image rendered from the active Cilium Helm values into the local
+registry. The registry also receives the NGINX `stable` image used by the
+LoadBalancer guide. Complete registry staging before exporting the VMs as
+OVAs; this does not make installation of an empty cluster possible without
+separately staging OS packages and bootstrap images. All nodes need
+connectivity to one another for Kubernetes/Cilium/Longhorn traffic and
+synchronized clocks.
 
 ## Architecture
 
@@ -70,6 +78,8 @@ assigned only after the controller network interface is available at boot.
 For an example NGINX workload exposed through a Cilium-managed
 `LoadBalancer` service, see the
 [NGINX and Cilium LoadBalancer guide](docs/deploy-nginx-cilium-loadbalancer.md).
+To run an interactive Ubuntu pod from the image in the local registry, see the
+[Ubuntu pod guide](docs/deploy-ubuntu-pod.md).
 
 ## Configure before running
 
@@ -175,7 +185,8 @@ registry; run it while the first control-plane node is available:
 | `longhorn` | Install Longhorn and prepare replicated storage prerequisites |
 | `registry_deploy` | Install Longhorn, migrate existing data if needed, and deploy two registry replicas |
 | `registry_runtime` | Configure containerd for the registry |
-| `registry_images` | Copy configured images into the registry |
+| `registry_images` | Copy configured, NGINX, and active Cilium chart images into the registry; stage the chart and tools on controllers |
+| `cilium_offline` | Stage the active Cilium chart and rendered images, plus Helm and Cilium CLI, for offline use |
 | `registry` | Run Longhorn installation and all registry tasks |
 
 Example:

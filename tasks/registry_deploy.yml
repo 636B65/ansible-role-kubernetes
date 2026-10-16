@@ -265,6 +265,103 @@
   tags:
     - registry_deploy
 
+- name: Inspect the existing shared registry HTTP secret
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - secret
+      - kubernetes-image-registry-http
+      - --namespace
+      - "{{ kubernetes_registry_namespace }}"
+      - --output
+      - json
+  register: kubernetes_registry_http_secret
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Validate the existing registry HTTP secret
+  ansible.builtin.assert:
+    that:
+      - >-
+        kubernetes_registry_http_secret.rc != 0
+        or 'http-secret' in (kubernetes_registry_http_secret.stdout | from_json).data
+    fail_msg: >-
+      Kubernetes Secret kubernetes-image-registry-http exists without its
+      required http-secret key. Repair the secret before rolling out registry
+      replicas.
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Generate the shared registry HTTP secret if it does not exist
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - rand
+      - -hex
+      - "32"
+  register: kubernetes_registry_http_secret_generated
+  changed_when: false
+  no_log: true
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_http_secret.rc != 0
+  tags:
+    - registry_deploy
+
+- name: Set the persistent registry HTTP secret value
+  ansible.builtin.set_fact:
+    kubernetes_registry_http_secret_value: >-
+      {{
+        (kubernetes_registry_http_secret.stdout | from_json).data['http-secret'] | b64decode
+        if kubernetes_registry_http_secret.rc == 0
+        else kubernetes_registry_http_secret_generated.stdout | trim
+      }}
+  no_log: true
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Render the shared registry HTTP secret
+  ansible.builtin.template:
+    src: registry-http-secret.yml.j2
+    dest: /tmp/kubernetes-registry-http-secret.yml
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Apply the shared registry HTTP secret
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - apply
+      - -f
+      - /tmp/kubernetes-registry-http-secret.yml
+  register: kubernetes_registry_http_secret_apply
+  changed_when: >-
+    'created' in kubernetes_registry_http_secret_apply.stdout
+    or 'configured' in kubernetes_registry_http_secret_apply.stdout
+  no_log: true
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Remove the temporary registry HTTP secret manifest
+  ansible.builtin.file:
+    path: /tmp/kubernetes-registry-http-secret.yml
+    state: absent
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
 - name: Stop the legacy registry before copying its data
   ansible.builtin.command:
     argv:
