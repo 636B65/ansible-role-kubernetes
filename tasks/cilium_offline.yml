@@ -339,6 +339,9 @@
     - cilium_offline
 
 - name: Render the installed Cilium configuration and remove temporary values
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - cilium_offline
   block:
     - name: Save the current Cilium values temporarily for chart rendering
       ansible.builtin.copy:
@@ -368,9 +371,6 @@
       ansible.builtin.file:
         path: /tmp/kubernetes-cilium-helm-values.yaml
         state: absent
-  when: inventory_hostname == kubernetes_registry_node
-  tags:
-    - cilium_offline
 
 - name: Extract unique upstream image references from the Cilium chart
   ansible.builtin.set_fact:

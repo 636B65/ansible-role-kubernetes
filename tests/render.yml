@@ -57,7 +57,10 @@
           - "'kubernetes-image-registry-http' in lookup('file', test_output_dir ~ '/kubernetes-registry.yml')"
           - "'requiredDuringSchedulingIgnoredDuringExecution' in lookup('file', test_output_dir ~ '/kubernetes-registry.yml')"
           - "'claimName: registry-data' in lookup('file', test_output_dir ~ '/kubernetes-registry.yml')"
-          - "(lookup('file', test_output_dir ~ '/kubernetes-registry-http-secret.yml') | from_yaml).data['http-secret'] | b64decode == kubernetes_registry_http_secret_value"
+          - >-
+            (lookup('file', test_output_dir ~ '/kubernetes-registry-http-secret.yml')
+            | from_yaml).data['http-secret'] | b64decode
+            == kubernetes_registry_http_secret_value
           - "'cp -a /legacy/. /replicated/' in lookup('file', test_output_dir ~ '/kubernetes-registry-migration.yml')"
           - "(lookup('file', test_output_dir ~ '/kubernetes-registry-storage-class.yml') | from_yaml).parameters.numberOfReplicas == '3'"
           - "(lookup('file', test_output_dir ~ '/kubernetes-registry-storage.yml') | from_yaml_all | list)[1].spec.accessModes == ['ReadWriteMany']"
