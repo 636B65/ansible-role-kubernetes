@@ -7,5 +7,9 @@ all:
           ansible_host: 192.0.2.11
     k8s_workers:
       hosts:
-        test-worker:
+        test-worker01:
           ansible_host: 192.0.2.21
+        test-worker02:
+          ansible_host: 192.0.2.22
+        test-worker03:
+          ansible_host: 192.0.2.23

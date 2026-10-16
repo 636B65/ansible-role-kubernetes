@@ -1,0 +1,165 @@
+---
+- name: Validate that enough worker nodes exist for replicated registry storage
+  ansible.builtin.assert:
+    that:
+      - kubernetes_longhorn_replica_count | int >= 2
+      - kubernetes_registry_replicas | int >= 2
+      - groups[kubernetes_worker_group] | length >= kubernetes_longhorn_replica_count | int
+    fail_msg: >-
+      Longhorn registry storage needs at least {{ kubernetes_longhorn_replica_count }}
+      worker nodes to keep replicas on separate nodes and tolerate a controller failure.
+  run_once: true
+  tags:
+    - longhorn
+
+- name: Install Longhorn iSCSI and NFS client prerequisites
+  ansible.builtin.apt:
+    name:
+      - open-iscsi
+      - nfs-common
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  tags:
+    - longhorn
+
+- name: Enable the iSCSI daemon required by Longhorn
+  ansible.builtin.service:
+    name: iscsid
+    state: started
+    enabled: true
+  tags:
+    - longhorn
+
+- name: Resolve the latest stable Longhorn release
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/longhorn/longhorn/releases/latest
+    return_content: true
+    headers:
+      Accept: application/vnd.github+json
+    timeout: 30
+  register: kubernetes_longhorn_latest_release
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_longhorn_version == "latest"
+  tags:
+    - longhorn
+
+- name: Set the Longhorn version for installation
+  ansible.builtin.set_fact:
+    kubernetes_longhorn_resolved_version: >-
+      {{
+        (kubernetes_longhorn_latest_release.json.tag_name
+        if kubernetes_longhorn_version == 'latest'
+        else kubernetes_longhorn_version)
+        | regex_replace('^v', '')
+      }}
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Validate the selected Longhorn version
+  ansible.builtin.assert:
+    that:
+      - kubernetes_longhorn_resolved_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Download the official Longhorn installation manifest
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/longhorn/longhorn/v{{ kubernetes_longhorn_resolved_version }}/deploy/longhorn.yaml"
+    dest: /tmp/longhorn-installation.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Install Longhorn replicated block storage
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - apply
+      - -f
+      - /tmp/longhorn-installation.yaml
+  register: kubernetes_longhorn_install
+  changed_when: >-
+    'created' in kubernetes_longhorn_install.stdout
+    or 'configured' in kubernetes_longhorn_install.stdout
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Wait for Longhorn managers on all cluster nodes
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - daemonset/longhorn-manager
+      - --namespace
+      - longhorn-system
+      - --timeout=600s
+  changed_when: false
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Wait for the Longhorn CSI driver deployer
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - deployment/longhorn-driver-deployer
+      - --namespace
+      - longhorn-system
+      - --timeout=600s
+  changed_when: false
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Wait for the Longhorn storage class to be available
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - storageclass
+      - longhorn
+  register: kubernetes_longhorn_storage_class
+  changed_when: false
+  retries: 30
+  delay: 10
+  until: kubernetes_longhorn_storage_class.rc == 0
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Render the replicated registry storage class
+  ansible.builtin.template:
+    src: longhorn-registry-storage-class.yml.j2
+    dest: /tmp/kubernetes-longhorn-registry-storage-class.yml
+    owner: root
+    group: root
+    mode: "0600"
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Apply the replicated registry storage class
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - apply
+      - -f
+      - /tmp/kubernetes-longhorn-registry-storage-class.yml
+  register: kubernetes_registry_storage_class_apply
+  changed_when: >-
+    'created' in kubernetes_registry_storage_class_apply.stdout
+    or 'configured' in kubernetes_registry_storage_class_apply.stdout
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn

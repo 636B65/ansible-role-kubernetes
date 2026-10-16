@@ -1,16 +1,194 @@
 ---
-- name: Create persistent storage directory for the registry
-  ansible.builtin.file:
-    path: "{{ kubernetes_registry_storage_path }}"
-    state: directory
-    owner: "1000"
-    group: "1000"
-    mode: "0750"
+- name: Inspect any existing registry deployment before storage migration
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - deployment
+      - kubernetes-image-registry
+      - --namespace
+      - "{{ kubernetes_registry_namespace }}"
+      - --output
+      - json
+  register: kubernetes_registry_existing_deployment
+  changed_when: false
+  failed_when: false
   when: inventory_hostname == kubernetes_registry_node
   tags:
     - registry_deploy
 
-- name: Render the in-cluster Docker Distribution registry resources
+- name: Detect the legacy single-node registry storage
+  ansible.builtin.set_fact:
+    kubernetes_registry_legacy_data_volume: >-
+      {{
+        (kubernetes_registry_existing_deployment.stdout | from_json).spec.template.spec.volumes
+        | selectattr('name', 'equalto', 'registry-data')
+        | list
+        | first
+        | default({})
+      }}
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_existing_deployment.rc == 0
+  tags:
+    - registry_deploy
+
+- name: Determine whether legacy registry data needs migration
+  ansible.builtin.set_fact:
+    kubernetes_registry_needs_storage_migration: >-
+      {{
+        kubernetes_registry_legacy_data_volume.hostPath.path
+        | default('') == kubernetes_registry_storage_path
+      }}
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_existing_deployment.rc == 0
+  tags:
+    - registry_deploy
+
+- name: Create the replicated registry storage class and claim
+  ansible.builtin.template:
+    src: registry-storage.yml.j2
+    dest: /tmp/kubernetes-registry-storage.yml
+    owner: root
+    group: root
+    mode: "0600"
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Apply the replicated registry storage class and claim
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - apply
+      - -f
+      - /tmp/kubernetes-registry-storage.yml
+  register: kubernetes_registry_storage_apply
+  changed_when: >-
+    'created' in kubernetes_registry_storage_apply.stdout
+    or 'configured' in kubernetes_registry_storage_apply.stdout
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Wait for the replicated registry volume to bind
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - wait
+      - --for=jsonpath={.status.phase}=Bound
+      - "pvc/registry-data"
+      - --namespace
+      - "{{ kubernetes_registry_namespace }}"
+      - --timeout=600s
+  changed_when: false
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Stop the legacy registry before copying its data
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - scale
+      - deployment/kubernetes-image-registry
+      - --namespace
+      - "{{ kubernetes_registry_namespace }}"
+      - --replicas=0
+  changed_when: true
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_needs_storage_migration | default(false)
+  tags:
+    - registry_deploy
+
+- name: Wait for the legacy registry pod to stop before migration
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - pods
+      - --namespace
+      - "{{ kubernetes_registry_namespace }}"
+      - --selector
+      - app=kubernetes-image-registry
+      - --output
+      - name
+  register: kubernetes_registry_legacy_pods
+  changed_when: false
+  until: kubernetes_registry_legacy_pods.stdout | trim == ""
+  retries: 60
+  delay: 5
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_needs_storage_migration | default(false)
+  tags:
+    - registry_deploy
+
+- name: Render a one-time job to copy legacy registry data
+  ansible.builtin.template:
+    src: registry-migration-job.yml.j2
+    dest: /tmp/kubernetes-registry-migration-job.yml
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_needs_storage_migration | default(false)
+  tags:
+    - registry_deploy
+
+- name: Remove any previous completed registry migration job
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - delete
+      - job
+      - kubernetes-registry-storage-migration
+      - --namespace
+      - "{{ kubernetes_registry_namespace }}"
+      - --ignore-not-found
+  changed_when: false
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_needs_storage_migration | default(false)
+  tags:
+    - registry_deploy
+
+- name: Run the one-time migration from hostPath to replicated storage
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - apply
+      - -f
+      - /tmp/kubernetes-registry-migration-job.yml
+  register: kubernetes_registry_migration_apply
+  changed_when: "'created' in kubernetes_registry_migration_apply.stdout"
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_needs_storage_migration | default(false)
+  tags:
+    - registry_deploy
+
+- name: Wait for legacy registry data migration to complete
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - wait
+      - --for=condition=complete
+      - job/kubernetes-registry-storage-migration
+      - --namespace
+      - "{{ kubernetes_registry_namespace }}"
+      - --timeout=600s
+  changed_when: false
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - kubernetes_registry_needs_storage_migration | default(false)
+  tags:
+    - registry_deploy
+
+- name: Render the highly available registry resources
   ansible.builtin.template:
     src: registry.yml.j2
     dest: /tmp/kubernetes-image-registry.yml
@@ -21,7 +199,7 @@
   tags:
     - registry_deploy
 
-- name: Apply the in-cluster image registry resources
+- name: Apply the highly available registry resources
   ansible.builtin.command:
     argv:
       - kubectl
@@ -36,7 +214,7 @@
   tags:
     - registry_deploy
 
-- name: Wait for the in-cluster registry to become ready
+- name: Wait for both registry replicas to become ready
   ansible.builtin.command:
     argv:
       - kubectl
@@ -45,7 +223,7 @@
       - deployment/kubernetes-image-registry
       - --namespace
       - "{{ kubernetes_registry_namespace }}"
-      - --timeout=300s
+      - --timeout=600s
   changed_when: false
   when: inventory_hostname == kubernetes_registry_node
   tags:

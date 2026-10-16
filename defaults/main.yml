@@ -21,6 +21,11 @@ kubernetes_registry_hostname: registry.k8s.local
 kubernetes_registry_node_port: 30500
 kubernetes_registry_storage_path: /var/lib/kubernetes-registry
 kubernetes_registry_node: "{{ groups[kubernetes_control_plane_group][0] }}"
+kubernetes_registry_storage_size: 50Gi
+kubernetes_registry_storage_class: kubernetes-registry-longhorn
+kubernetes_registry_replicas: 2
+kubernetes_longhorn_version: latest
+kubernetes_longhorn_replica_count: 3
 kubernetes_registry_images:
   - source: docker.io/library/ubuntu:latest
     destination: ubuntu:latest

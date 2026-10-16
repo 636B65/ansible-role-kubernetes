@@ -47,6 +47,9 @@ jobs:
           ansible-playbook --syntax-check \
             -i tests/inventory.yml \
             tests/syntax.yml
+          ansible-playbook \
+            -i tests/inventory.yml \
+            tests/render.yml
 
   release:
     name: Publish GitHub Release

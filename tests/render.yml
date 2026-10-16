@@ -1,0 +1,72 @@
+---
+- name: Render and verify Longhorn registry manifests
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    test_output_dir: "{{ lookup('env', 'RUNNER_TEMP') | default('/tmp', true) }}"
+    role_root: "{{ playbook_dir | dirname }}"
+    kubernetes_registry_namespace: local-registry
+    kubernetes_registry_storage_class: kubernetes-registry-longhorn
+    kubernetes_registry_storage_size: 50Gi
+    kubernetes_registry_replicas: 2
+    kubernetes_registry_node_port: 30500
+    kubernetes_registry_image: registry:2
+    kubernetes_registry_node: test-cp
+    kubernetes_registry_storage_path: /var/lib/kubernetes-registry
+    kubernetes_longhorn_replica_count: 3
+  tasks:
+    - name: Render the Longhorn registry storage class
+      ansible.builtin.template:
+        src: "{{ role_root }}/templates/longhorn-registry-storage-class.yml.j2"
+        dest: "{{ test_output_dir }}/kubernetes-registry-storage-class.yml"
+        mode: "0600"
+
+    - name: Render the replicated registry claim
+      ansible.builtin.template:
+        src: "{{ role_root }}/templates/registry-storage.yml.j2"
+        dest: "{{ test_output_dir }}/kubernetes-registry-storage.yml"
+        mode: "0600"
+
+    - name: Render the highly available registry deployment
+      ansible.builtin.template:
+        src: "{{ role_root }}/templates/registry.yml.j2"
+        dest: "{{ test_output_dir }}/kubernetes-registry.yml"
+        mode: "0600"
+
+    - name: Render the legacy data migration job
+      ansible.builtin.template:
+        src: "{{ role_root }}/templates/registry-migration-job.yml.j2"
+        dest: "{{ test_output_dir }}/kubernetes-registry-migration.yml"
+        mode: "0600"
+
+    - name: Verify registry storage and availability settings
+      ansible.builtin.assert:
+        that:
+          - "'numberOfReplicas: \"3\"' in lookup('file', test_output_dir ~ '/kubernetes-registry-storage-class.yml')"
+          - "'accessModes:\\n    - ReadWriteMany' in lookup('file', test_output_dir ~ '/kubernetes-registry-storage.yml')"
+          - "'replicas: 2' in lookup('file', test_output_dir ~ '/kubernetes-registry.yml')"
+          - "'requiredDuringSchedulingIgnoredDuringExecution' in lookup('file', test_output_dir ~ '/kubernetes-registry.yml')"
+          - "'claimName: registry-data' in lookup('file', test_output_dir ~ '/kubernetes-registry.yml')"
+          - "'cp -a /legacy/. /replicated/' in lookup('file', test_output_dir ~ '/kubernetes-registry-migration.yml')"
+          - "(lookup('file', test_output_dir ~ '/kubernetes-registry-storage-class.yml') | from_yaml).parameters.numberOfReplicas == '3'"
+          - "(lookup('file', test_output_dir ~ '/kubernetes-registry-storage.yml') | from_yaml_all | list)[1].spec.accessModes == ['ReadWriteMany']"
+          - "(lookup('file', test_output_dir ~ '/kubernetes-registry-migration.yml') | from_yaml).kind == 'Job'"
+
+    - name: Parse every document in the registry manifest
+      ansible.builtin.set_fact:
+        rendered_registry_documents: >-
+          {{
+            lookup('file', test_output_dir ~ '/kubernetes-registry.yml')
+            | from_yaml_all
+            | list
+          }}
+
+    - name: Verify deployment, service, and disruption budget documents
+      ansible.builtin.assert:
+        that:
+          - rendered_registry_documents | length == 3
+          - rendered_registry_documents[0].kind == 'Deployment'
+          - rendered_registry_documents[0].spec.replicas | int == 2
+          - rendered_registry_documents[1].kind == 'Service'
+          - rendered_registry_documents[2].kind == 'PodDisruptionBudget'

@@ -1,9 +1,9 @@
 # ansible-role-kubernetes
 
 An Ansible role for installing a Kubernetes cluster with containerd, Cilium,
-HAProxy and Keepalived on the control-plane nodes, plus an optional internal
-Docker Distribution registry. The role resolves the latest stable Kubernetes
-and Cilium releases at runtime.
+HAProxy and Keepalived on the control-plane nodes, plus an internal Docker
+Distribution registry backed by replicated Longhorn storage. The role resolves
+the latest stable Kubernetes, Cilium, and Longhorn releases at runtime.
 
 > **Before you run this role:** replace all `changeme` values, configure your
 > inventory and API virtual IP, review the network requirements, and keep
@@ -17,7 +17,10 @@ and Cilium releases at runtime.
 - At least one control-plane node and one worker node. For a highly available
   control plane, use three control-plane nodes.
 - All nodes must be able to reach each other and the required package/image
-  repositories.
+  repositories. Longhorn additionally requires iSCSI and NFSv4 client support
+  and sufficient local disk space under `/var/lib/longhorn` on at least three
+  worker nodes. Permit Longhorn's node-to-node storage traffic through host
+  firewalls as described in its [network requirements](https://longhorn.io/docs/latest/deploy/important-notes/#networking).
 - A free virtual IP address on the control-plane network for Keepalived.
 
 ## Architecture
@@ -65,10 +68,28 @@ servers. Cilium provides pod networking across the cluster.
    controllers. The HAProxy statistics page is unauthenticated on TCP `8404`;
    restrict it to trusted administrator networks.
 
-The registry feature exposes a plain-HTTP NodePort (`30500`) without
-authentication, and stores data on the first control-plane node. Do not expose
-it outside a trusted network. Review or disable registry tasks if that is not
-appropriate for your deployment.
+The registry uses a Longhorn `ReadWriteMany` volume with three replicas by
+default, and runs two registry pods. Set `kubernetes_longhorn_replica_count`
+and `kubernetes_registry_storage_size` to match your capacity and durability
+requirements. With the default 50 GiB claim and three replicas, allow about
+150 GiB of raw capacity across the storage nodes. Longhorn stores replicas on
+separate nodes; keep adequate free disk space on at least that many worker
+nodes. Two registry pods are scheduled on different nodes. A single controller
+failure does not lose the registry volume, provided the Longhorn prerequisites
+are met and healthy replicas exist on surviving nodes; volume/share-manager
+reattachment can cause a brief interruption while Kubernetes and Longhorn
+recover.
+
+On an existing cluster, the first registry deployment with Longhorn detects
+the old hostPath deployment, briefly scales it down, and copies its data from
+the first control-plane node to the replicated volume before switching the
+registry to two pods. Run this migration while that controller and its old
+registry data are available; the old copy is left untouched. If that host or
+its disk is already lost, data that existed only there cannot be recovered by
+this migration.
+
+The registry is exposed as a plain-HTTP NodePort (`30500`) without
+authentication. Do not expose it outside a trusted network.
 
 ## Install and run
 
@@ -100,7 +121,9 @@ secret manager.
 
 ## Selective task tags
 
-Use tags to run only the relevant part of the role:
+Use tags to run only the relevant part of the role. `registry_deploy` includes
+Longhorn installation and the one-time data migration from the old hostPath
+registry; run it while the first control-plane node is available:
 
 | Tag | Tasks |
 | --- | --- |
@@ -108,10 +131,11 @@ Use tags to run only the relevant part of the role:
 | `loadbalancer` | HAProxy and Keepalived configuration on control-plane nodes |
 | `bootstrap` | Initialize the first controller and install Cilium |
 | `join` | Join additional control-plane and worker nodes |
-| `registry_deploy` | Deploy the internal image registry |
+| `longhorn` | Install Longhorn and prepare replicated storage prerequisites |
+| `registry_deploy` | Install Longhorn, migrate existing data if needed, and deploy two registry replicas |
 | `registry_runtime` | Configure containerd for the registry |
 | `registry_images` | Copy configured images into the registry |
-| `registry` | Run all registry tasks |
+| `registry` | Run Longhorn installation and all registry tasks |
 
 Example:
 

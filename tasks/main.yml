@@ -104,6 +104,13 @@
     - cluster
     - join
 
+- name: Install Longhorn replicated storage for the registry
+  ansible.builtin.import_tasks: longhorn.yml
+  tags:
+    - longhorn
+    - registry
+    - registry_deploy
+
 - name: Deploy the internal image registry
   ansible.builtin.import_tasks: registry_deploy.yml
   tags:
