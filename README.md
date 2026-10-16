@@ -14,14 +14,47 @@ the latest stable Kubernetes, Cilium, and Longhorn releases at runtime.
 - Ansible Core 2.16 or newer on the Ansible controller.
 - Debian-family managed hosts with `apt`, Python, SSH access, and privilege
   escalation to root.
-- At least one control-plane node and one worker node. For a highly available
-  control plane, use three control-plane nodes.
+- At least one control-plane node and one worker node. The default registry
+  configuration needs at least three worker nodes for its three Longhorn
+  replicas; use three control-plane nodes for a highly available control plane.
 - All nodes must be able to reach each other and the required package/image
   repositories. Longhorn additionally requires iSCSI and NFSv4 client support
   and sufficient local disk space under `/var/lib/longhorn` on at least three
   worker nodes. Permit Longhorn's node-to-node storage traffic through host
   firewalls as described in its [network requirements](https://longhorn.io/docs/latest/deploy/important-notes/#networking).
 - A free virtual IP address on the control-plane network for Keepalived.
+
+## System requirements and sizing
+
+The current six-node cluster uses the following size on **each** node:
+
+| Resource | Current per-node size | Notes |
+| --- | ---: | --- |
+| CPU | 2 vCPU | Baseline for this small cluster; leave CPU headroom for workloads. |
+| Memory | 4 GB RAM | Small-lab baseline; can become constrained under Kubernetes, Cilium, Longhorn, and application workloads. |
+| Disk | 60 GB | Total disk, not all available to Longhorn. OS, container images, logs, and Kubernetes data use part of it. |
+
+With three controllers and three workers, that is 12 vCPU, 24 GB RAM, and
+360 GB of raw disk across the cluster. These totals are not pooled: each node
+must independently meet its requirements. The current size is a practical
+small-cluster baseline, not a production capacity guarantee. For a growing or
+production workload, a reasonable starting target is 4 vCPU and 8 GB RAM per
+node (not a role-enforced minimum), then size disk for the operating system,
+image cache, logs, workload data, and expected growth.
+
+Longhorn stores three copies of the default 8 GiB registry volume, requiring
+about 24 GiB of raw capacity in total and at least 8 GiB of schedulable free
+space on each of three worker disks, plus headroom for Longhorn's disk
+reservations and rebuilds. Longhorn replica capacity is separate from usable
+application storage: every extra GiB in the registry claim consumes roughly
+three GiB across the workers at the default replica count. Keep iSCSI and NFSv4
+client support enabled on every node.
+
+The role targets Debian-family systems with `apt`, Python, SSH, and root
+privilege escalation. The control-plane nodes need at least 2 CPU cores for
+the kubeadm setup. All nodes need network access to the configured package and
+image repositories, connectivity to one another for Kubernetes/Cilium/Longhorn
+traffic, and synchronized clocks.
 
 ## Architecture
 
@@ -31,6 +64,10 @@ The editable diagrams.net source is [docs/architecture.drawio](docs/architecture
 The API virtual IP is active on one controller at a time; HAProxy on that
 controller distributes new TCP connections round-robin across healthy API
 servers. Cilium provides pod networking across the cluster.
+
+For an example NGINX workload exposed through a Cilium-managed
+`LoadBalancer` service, see the
+[NGINX and Cilium LoadBalancer guide](docs/deploy-nginx-cilium-loadbalancer.md).
 
 ## Configure before running
 
