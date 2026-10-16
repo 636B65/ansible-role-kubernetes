@@ -1,0 +1,33 @@
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    daemon
+    maxconn 4096
+
+defaults
+    log global
+    mode tcp
+    option tcplog
+    timeout connect 5s
+    timeout client  1m
+    timeout server  1m
+
+frontend kubernetes_api
+    bind {{ kubernetes_api_vip }}:{{ kubernetes_api_port }}
+    default_backend kubernetes_control_planes
+
+backend kubernetes_control_planes
+    balance roundrobin
+    option tcp-check
+{% for controller in groups[kubernetes_control_plane_group] %}
+    server {{ controller }} {{ hostvars[controller].ansible_default_ipv4.address }}:{{ kubernetes_apiserver_port }} check
+{% endfor %}
+
+listen haproxy_stats
+    bind {{ haproxy_stats_bind_address }}:{{ haproxy_stats_port }}
+    mode http
+    stats enable
+    stats uri {{ haproxy_stats_uri }}
+    stats refresh {{ haproxy_stats_refresh }}
+    stats show-node
+    stats show-desc Kubernetes_API_load_balancer

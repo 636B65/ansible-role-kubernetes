@@ -1,0 +1,36 @@
+---
+- name: Check whether this worker has joined the cluster
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: worker_kubelet_conf
+  tags:
+    - join
+
+- name: Join this worker to the Kubernetes cluster
+  ansible.builtin.command: >-
+    {{ hostvars[groups[kubernetes_control_plane_group][0]].kubernetes_join_command_for_cluster }}
+    --cri-socket unix:///run/containerd/containerd.sock
+    --node-name {{ inventory_hostname }}
+  no_log: true
+  register: worker_join_result
+  changed_when: true
+  failed_when: false
+  when: not worker_kubelet_conf.stat.exists
+  tags:
+    - join
+
+- name: Report a worker join failure
+  ansible.builtin.fail:
+    msg: >-
+      kubeadm worker join failed on {{ inventory_hostname }}:
+      {{
+        worker_join_result.stderr
+        | default(worker_join_result.stdout, true)
+        | regex_replace('[0-9a-f]{64}', '[REDACTED KEY]')
+        | regex_replace('[a-z0-9]{6}\\.[a-z0-9]{16}', '[REDACTED TOKEN]')
+      }}
+  when:
+    - not worker_kubelet_conf.stat.exists
+    - worker_join_result.rc != 0
+  tags:
+    - join

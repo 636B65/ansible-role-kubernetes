@@ -1,0 +1,4 @@
+server = "http://{{ kubernetes_registry_hostname }}:{{ kubernetes_registry_node_port }}"
+
+[host."http://{{ kubernetes_registry_hostname }}:{{ kubernetes_registry_node_port }}"]
+  capabilities = ["pull", "resolve", "push"]

@@ -1,0 +1,46 @@
+---
+- name: Install Skopeo for copying images into the registry
+  ansible.builtin.apt:
+    name: skopeo
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_images
+
+- name: Copy the selected Ubuntu-based images into the internal registry
+  ansible.builtin.command:
+    argv:
+      - skopeo
+      - copy
+      - --all
+      - --dest-tls-verify=false
+      - "docker://{{ item.source }}"
+      - "docker://{{ kubernetes_registry_hostname }}:{{ kubernetes_registry_node_port }}/{{ item.destination }}"
+  loop: "{{ kubernetes_registry_images }}"
+  register: kubernetes_registry_image_copy
+  changed_when: true
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_images
+
+- name: Verify the copied image tags in the internal registry
+  ansible.builtin.uri:
+    url: >-
+      http://{{ kubernetes_registry_hostname }}:{{ kubernetes_registry_node_port
+      }}/v2/{{ item.destination.split(':')[0] }}/manifests/{{ item.destination.split(':')[1] }}
+    method: HEAD
+    headers:
+      Accept: >-
+        application/vnd.docker.distribution.manifest.list.v2+json,
+        application/vnd.oci.image.index.v1+json,
+        application/vnd.docker.distribution.manifest.v2+json,
+        application/vnd.oci.image.manifest.v1+json
+    status_code: 200
+    return_content: false
+    timeout: 20
+  loop: "{{ kubernetes_registry_images }}"
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_images

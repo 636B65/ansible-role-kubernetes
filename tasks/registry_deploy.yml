@@ -1,0 +1,52 @@
+---
+- name: Create persistent storage directory for the registry
+  ansible.builtin.file:
+    path: "{{ kubernetes_registry_storage_path }}"
+    state: directory
+    owner: "1000"
+    group: "1000"
+    mode: "0750"
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Render the in-cluster Docker Distribution registry resources
+  ansible.builtin.template:
+    src: registry.yml.j2
+    dest: /tmp/kubernetes-image-registry.yml
+    owner: root
+    group: root
+    mode: "0600"
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Apply the in-cluster image registry resources
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - apply
+      - -f
+      - /tmp/kubernetes-image-registry.yml
+  register: kubernetes_registry_apply
+  changed_when: >-
+    'created' in kubernetes_registry_apply.stdout
+    or 'configured' in kubernetes_registry_apply.stdout
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy
+
+- name: Wait for the in-cluster registry to become ready
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - rollout
+      - status
+      - deployment/kubernetes-image-registry
+      - --namespace
+      - "{{ kubernetes_registry_namespace }}"
+      - --timeout=300s
+  changed_when: false
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - registry_deploy

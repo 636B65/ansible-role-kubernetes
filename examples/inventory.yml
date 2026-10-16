@@ -1,0 +1,19 @@
+---
+all:
+  children:
+    k8s_control_plane:
+      hosts:
+        kube-cp01:
+          ansible_host: 192.0.2.11
+        kube-cp02:
+          ansible_host: 192.0.2.12
+        kube-cp03:
+          ansible_host: 192.0.2.13
+    k8s_workers:
+      hosts:
+        kube-wl01:
+          ansible_host: 192.0.2.21
+        kube-wl02:
+          ansible_host: 192.0.2.22
+        kube-wl03:
+          ansible_host: 192.0.2.23

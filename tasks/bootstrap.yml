@@ -1,0 +1,261 @@
+---
+- name: Check if the first controller is already initialized
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: first_controller_admin_conf
+  when: inventory_hostname == groups[kubernetes_control_plane_group][0]
+  tags:
+    - bootstrap
+
+- name: Stop HAProxy on controllers before initial API server bootstrap
+  ansible.builtin.service:
+    name: haproxy
+    state: stopped
+  when:
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+    - not hostvars[groups[kubernetes_control_plane_group][0]].first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+
+- name: Initialize Kubernetes on the first controller
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - init
+      - --control-plane-endpoint={{ kubernetes_api_vip }}:{{ kubernetes_api_port }}
+      - --upload-certs
+      - --pod-network-cidr={{ kubernetes_pod_network_cidr }}
+      - --service-cidr={{ kubernetes_service_cidr }}
+      - --cri-socket=unix:///run/containerd/containerd.sock
+      - --apiserver-advertise-address={{ ansible_default_ipv4.address }}
+      - --node-name={{ inventory_hostname }}
+  changed_when: true
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - not first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+
+- name: Check initialization state of the first controller
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: first_controller_admin_conf
+  when: inventory_hostname == groups[kubernetes_control_plane_group][0]
+  tags:
+    - bootstrap
+
+- name: Create root kubectl configuration directory
+  ansible.builtin.file:
+    path: /root/.kube
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+
+- name: Configure kubectl for root
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+
+- name: Find the SSH user's home directory
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ loginusername }}"
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+
+- name: Create kubectl configuration directory for the SSH user
+  ansible.builtin.file:
+    path: "{{ getent_passwd[loginusername][4] }}/.kube"
+    state: directory
+    owner: "{{ loginusername }}"
+    mode: "0700"
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+
+- name: Configure kubectl for the SSH user
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ getent_passwd[loginusername][4] }}/.kube/config"
+    remote_src: true
+    owner: "{{ loginusername }}"
+    mode: "0600"
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+
+- name: Read the latest stable Cilium CLI release
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/cilium/cilium-cli/releases/latest
+    return_content: true
+    headers:
+      Accept: application/vnd.github+json
+    timeout: 30
+  register: cilium_cli_release
+  when: inventory_hostname == groups[kubernetes_control_plane_group][0]
+  tags:
+    - bootstrap
+
+- name: Select Cilium CLI archive for this controller architecture
+  ansible.builtin.set_fact:
+    cilium_cli_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_architecture, '') }}"
+    cilium_cli_archive_url: >-
+      {{
+        cilium_cli_release.json.assets
+        | selectattr('name', 'equalto', 'cilium-linux-' ~ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_architecture, '') ~ '.tar.gz')
+        | map(attribute='browser_download_url')
+        | first
+        | default('')
+      }}
+  when: inventory_hostname == groups[kubernetes_control_plane_group][0]
+  tags:
+    - bootstrap
+
+- name: Check Cilium CLI release architecture
+  ansible.builtin.assert:
+    that:
+      - cilium_cli_arch in ['amd64', 'arm64']
+      - cilium_cli_archive_url is defined
+  when: inventory_hostname == groups[kubernetes_control_plane_group][0]
+  tags:
+    - bootstrap
+
+- name: Download Cilium CLI
+  ansible.builtin.get_url:
+    url: "{{ cilium_cli_archive_url }}"
+    dest: /tmp/cilium-linux.tar.gz
+    mode: "0644"
+  when: inventory_hostname == groups[kubernetes_control_plane_group][0]
+  tags:
+    - bootstrap
+
+- name: Extract Cilium CLI
+  ansible.builtin.unarchive:
+    src: /tmp/cilium-linux.tar.gz
+    dest: /usr/local/bin
+    remote_src: true
+    include:
+      - cilium
+  when: inventory_hostname == groups[kubernetes_control_plane_group][0]
+  tags:
+    - bootstrap
+
+- name: Set Cilium CLI permissions
+  ansible.builtin.file:
+    path: /usr/local/bin/cilium
+    owner: root
+    group: root
+    mode: "0755"
+  when: inventory_hostname == groups[kubernetes_control_plane_group][0]
+  tags:
+    - bootstrap
+
+- name: Check whether Cilium is already installed and healthy
+  ansible.builtin.command:
+    argv:
+      - cilium
+      - status
+  register: cilium_status_check
+  changed_when: false
+  failed_when: false
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+
+- name: Install latest stable Cilium into the cluster
+  ansible.builtin.command:
+    argv:
+      - cilium
+      - install
+      - --set
+      - ipam.mode=kubernetes
+      - --set
+      - kubeProxyReplacement=false
+  changed_when: true
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+    - cilium_status_check.rc != 0
+  tags:
+    - bootstrap
+
+- name: Wait for Cilium to become ready
+  ansible.builtin.command:
+    argv:
+      - cilium
+      - status
+      - --wait
+  changed_when: false
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+
+- name: Create a control-plane join command
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - token
+      - create
+      - --print-join-command
+  changed_when: true
+  register: kubernetes_join_command
+  no_log: true
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+
+- name: Upload control-plane certificates and capture the key
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - init
+      - phase
+      - upload-certs
+      - --upload-certs
+  changed_when: true
+  register: kubernetes_certificate_upload
+  no_log: true
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+
+- name: Share join credentials with the other cluster hosts
+  ansible.builtin.set_fact:
+    kubernetes_join_command_for_cluster: "{{ kubernetes_join_command.stdout }}"
+    kubernetes_control_plane_certificate_key: "{{ kubernetes_certificate_upload.stdout_lines | last }}"
+  no_log: true
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap

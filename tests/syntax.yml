@@ -1,0 +1,8 @@
+---
+- name: Syntax-check Kubernetes role
+  hosts: k8s_control_plane:k8s_workers
+  gather_facts: false
+  tasks:
+    - name: Parse all role tasks
+      ansible.builtin.import_role:
+        name: ansible-role-kubernetes

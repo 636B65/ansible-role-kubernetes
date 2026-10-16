@@ -1,0 +1,14 @@
+---
+galaxy_info:
+  role_name: ansible_role_kubernetes
+  namespace: kubernetes_role_maintainers
+  author: Kubernetes Role Maintainers
+  description: Install Kubernetes, containerd, Cilium, HAProxy, Keepalived, and a local image registry
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+        - bullseye
+dependencies: []

@@ -1,0 +1,33 @@
+---
+- name: Install HAProxy and Keepalived on controllers
+  ansible.builtin.apt:
+    name:
+      - haproxy
+      - keepalived
+    state: present
+    update_cache: true
+  tags:
+    - loadbalancer
+
+- name: Configure HAProxy for the Kubernetes API
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: "0600"
+    validate: haproxy -c -f %s
+  notify: Restart HAProxy
+  tags:
+    - loadbalancer
+
+- name: Configure Keepalived for the Kubernetes API VIP
+  ansible.builtin.template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart Keepalived
+  tags:
+    - loadbalancer

@@ -1,0 +1,28 @@
+global_defs {
+    router_id {{ inventory_hostname | upper | replace('-', '_') }}
+}
+
+vrrp_instance KUBERNETES_API {
+    state BACKUP
+    interface {{ kubernetes_api_vip_interface }}
+    virtual_router_id {{ kubernetes_api_vip_router_id }}
+    priority {{ 150 - groups[kubernetes_control_plane_group].index(inventory_hostname) }}
+    advert_int 1
+    nopreempt
+
+    authentication {
+        auth_type PASS
+        auth_pass {{ kubernetes_keepalived_auth_pass }}
+    }
+
+    unicast_src_ip {{ ansible_default_ipv4.address }}
+    unicast_peer {
+{% for controller in groups[kubernetes_control_plane_group] if controller != inventory_hostname %}
+        {{ hostvars[controller].ansible_default_ipv4.address }}
+{% endfor %}
+    }
+
+    virtual_ipaddress {
+        {{ kubernetes_api_vip }}/{{ kubernetes_api_vip_prefix }} dev {{ kubernetes_api_vip_interface }}
+    }
+}

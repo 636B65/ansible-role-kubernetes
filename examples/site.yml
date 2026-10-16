@@ -1,0 +1,13 @@
+---
+- name: Install Kubernetes cluster
+  hosts: k8s_control_plane:k8s_workers
+  become: true
+  any_errors_fatal: true
+  gather_facts: true
+  vars:
+    loginusername: "{{ ansible_user }}"
+    kubernetes_api_vip: 192.0.2.10
+    kubernetes_api_vip_prefix: 24
+    kubernetes_keepalived_auth_pass: changeme
+  roles:
+    - ansible-role-kubernetes

@@ -1,0 +1,67 @@
+---
+- name: Map the registry hostname to this node for containerd
+  ansible.builtin.blockinfile:
+    path: "{{ kubernetes_hosts_file_path }}"
+    marker: "# {mark} ANSIBLE KUBERNETES REGISTRY HOST"
+    block: "{{ ansible_default_ipv4.address }} {{ kubernetes_registry_hostname }}"
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - registry_runtime
+
+- name: Create the containerd registry hosts configuration directory
+  ansible.builtin.file:
+    path: "/etc/containerd/certs.d/{{ kubernetes_registry_hostname }}:{{ kubernetes_registry_node_port }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags:
+    - registry_runtime
+
+- name: Remove any misplaced registry path from containerd configuration
+  ansible.builtin.lineinfile:
+    path: /etc/containerd/config.toml
+    line: "      config_path = '/etc/containerd/certs.d'"
+    state: absent
+  tags:
+    - registry_runtime
+
+- name: Point containerd at its registry hosts configuration directory
+  ansible.builtin.replace:
+    path: /etc/containerd/config.toml
+    regexp: "(?m)^([ \\t]*)config_path = ''$"
+    replace: "\\1config_path = '/etc/containerd/certs.d'"
+  notify: Restart containerd
+  tags:
+    - registry_runtime
+
+- name: Configure containerd to use the internal HTTP registry
+  ansible.builtin.template:
+    src: registry-hosts.toml.j2
+    dest: "/etc/containerd/certs.d/{{ kubernetes_registry_hostname }}:{{ kubernetes_registry_node_port }}/hosts.toml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart containerd
+  tags:
+    - registry_runtime
+
+- name: Restart containerd with the registry configuration
+  ansible.builtin.meta: flush_handlers
+  tags:
+    - registry_runtime
+
+- name: Check the registry NodePort from every cluster node
+  ansible.builtin.uri:
+    url: "http://{{ kubernetes_registry_hostname }}:{{ kubernetes_registry_node_port }}/v2/"
+    status_code: 200
+    return_content: false
+    timeout: 10
+  register: kubernetes_registry_health
+  retries: 12
+  delay: 5
+  until: kubernetes_registry_health.status == 200
+  tags:
+    - registry_runtime

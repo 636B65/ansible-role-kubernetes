@@ -1,0 +1,6 @@
+*.retry
+__pycache__/
+.ansible/
+examples/group_vars/all.yml
+examples/inventory.local.yml
+*.vault

@@ -1,0 +1,38 @@
+---
+- name: Check whether this controller has joined the cluster
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: controller_kubelet_conf
+  tags:
+    - join
+
+- name: Join this controller to the Kubernetes control plane
+  ansible.builtin.command: >-
+    {{ hostvars[groups[kubernetes_control_plane_group][0]].kubernetes_join_command_for_cluster }}
+    --control-plane
+    --certificate-key {{ hostvars[groups[kubernetes_control_plane_group][0]].kubernetes_control_plane_certificate_key }}
+    --cri-socket unix:///run/containerd/containerd.sock
+    --node-name {{ inventory_hostname }}
+  no_log: true
+  register: controller_join_result
+  changed_when: true
+  failed_when: false
+  when: not controller_kubelet_conf.stat.exists
+  tags:
+    - join
+
+- name: Report a control-plane join failure
+  ansible.builtin.fail:
+    msg: >-
+      kubeadm control-plane join failed on {{ inventory_hostname }}:
+      {{
+        controller_join_result.stderr
+        | default(controller_join_result.stdout, true)
+        | regex_replace('[0-9a-f]{64}', '[REDACTED KEY]')
+        | regex_replace('[a-z0-9]{6}\\.[a-z0-9]{16}', '[REDACTED TOKEN]')
+      }}
+  when:
+    - not controller_kubelet_conf.stat.exists
+    - controller_join_result.rc != 0
+  tags:
+    - join

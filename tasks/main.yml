@@ -1,0 +1,123 @@
+---
+- name: Validate cluster configuration
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+      - kubernetes_control_plane_group in groups
+      - kubernetes_worker_group in groups
+      - groups[kubernetes_control_plane_group] | length >= 1
+      - groups[kubernetes_worker_group] | length >= 1
+      - kubernetes_api_vip != "192.168.1.100"
+      - kubernetes_keepalived_auth_pass != "changeme"
+      - kubernetes_keepalived_auth_pass | length <= 8
+      - inventory_hostname in groups[kubernetes_control_plane_group] or inventory_hostname in groups[kubernetes_worker_group]
+    fail_msg: >-
+      Configure Debian-family hosts in both Kubernetes groups, a real API VIP,
+      and a Keepalived password of at most eight characters.
+  run_once: true
+  tags:
+    - always
+
+- name: Validate that every cluster host has an IPv4 address in inventory
+  ansible.builtin.assert:
+    that:
+      - hostvars[item].ansible_host is defined
+      - hostvars[item].ansible_host is match('^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$')
+    fail_msg: "Set ansible_host to the node's IPv4 address for {{ item }} in inventory.yml."
+  loop: "{{ (groups[kubernetes_control_plane_group] + groups[kubernetes_worker_group]) | unique | list }}"
+  run_once: true
+  tags:
+    - always
+
+- name: Add every cluster node name and address to /etc/hosts
+  ansible.builtin.blockinfile:
+    path: "{{ kubernetes_hosts_file_path }}"
+    marker: "# {mark} ANSIBLE KUBERNETES CLUSTER HOSTS"
+    block: |
+      {{ kubernetes_api_vip }} kubernetes-api
+      {% for host in (groups[kubernetes_control_plane_group] + groups[kubernetes_worker_group]) | unique %}
+      {{ hostvars[host].ansible_host }} {{ host }}
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - cluster_hosts
+
+- name: Prepare operating system and install Kubernetes
+  ansible.builtin.import_tasks: prerequisites.yml
+  tags:
+    - cluster
+    - prerequisites
+
+- name: Apply containerd configuration before Kubernetes bootstrap
+  ansible.builtin.meta: flush_handlers
+  tags:
+    - cluster
+    - prerequisites
+
+- name: Configure controller load balancers
+  ansible.builtin.import_tasks: loadbalancer.yml
+  when: inventory_hostname in groups[kubernetes_control_plane_group]
+  tags:
+    - cluster
+    - loadbalancer
+
+- name: Initialize the cluster and install Cilium
+  ansible.builtin.import_tasks: bootstrap.yml
+  tags:
+    - bootstrap
+    - cluster
+
+- name: Start controller load balancers after Kubernetes bootstrap
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - haproxy
+    - keepalived
+  when: inventory_hostname in groups[kubernetes_control_plane_group]
+  tags:
+    - cluster
+    - loadbalancer
+
+- name: Apply load balancer configuration before joining nodes
+  ansible.builtin.meta: flush_handlers
+  tags:
+    - cluster
+    - loadbalancer
+
+- name: Join control-plane nodes
+  ansible.builtin.import_tasks: join_control_plane.yml
+  when:
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+    - inventory_hostname != groups[kubernetes_control_plane_group][0]
+  tags:
+    - cluster
+    - join
+
+- name: Join worker nodes
+  ansible.builtin.import_tasks: join_worker.yml
+  when: inventory_hostname in groups[kubernetes_worker_group]
+  tags:
+    - cluster
+    - join
+
+- name: Deploy the internal image registry
+  ansible.builtin.import_tasks: registry_deploy.yml
+  tags:
+    - registry
+    - registry_deploy
+
+- name: Configure containerd to use the internal registry
+  ansible.builtin.import_tasks: registry_runtime.yml
+  tags:
+    - registry
+    - registry_runtime
+
+- name: Import selected images into the internal registry
+  ansible.builtin.import_tasks: registry_images.yml
+  tags:
+    - registry
+    - registry_images

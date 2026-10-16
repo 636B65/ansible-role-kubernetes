@@ -1,0 +1,5 @@
+---
+ansible_user: changeme
+ansible_password: changeme
+ansible_become: true
+ansible_become_password: changeme

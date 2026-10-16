@@ -1,0 +1,33 @@
+---
+kubernetes_control_plane_group: k8s_control_plane
+kubernetes_worker_group: k8s_workers
+
+kubernetes_api_vip: "192.168.1.100"
+kubernetes_api_vip_prefix: 24
+kubernetes_api_vip_interface: "{{ ansible_default_ipv4.interface }}"
+kubernetes_api_vip_router_id: 51
+kubernetes_keepalived_auth_pass: "changeme"
+
+kubernetes_pod_network_cidr: "10.244.0.0/16"
+kubernetes_service_cidr: "10.96.0.0/12"
+kubernetes_api_port: 8443
+kubernetes_apiserver_port: 6443
+containerd_package: containerd
+kubernetes_hosts_file_path: /etc/hosts
+
+kubernetes_registry_namespace: local-registry
+kubernetes_registry_image: registry:2
+kubernetes_registry_hostname: registry.k8s.local
+kubernetes_registry_node_port: 30500
+kubernetes_registry_storage_path: /var/lib/kubernetes-registry
+kubernetes_registry_node: "{{ groups[kubernetes_control_plane_group][0] }}"
+kubernetes_registry_images:
+  - source: docker.io/library/ubuntu:latest
+    destination: ubuntu:latest
+  - source: docker.io/ubuntu/nginx:latest
+    destination: nginx:latest
+
+haproxy_stats_bind_address: "*"
+haproxy_stats_port: 8404
+haproxy_stats_uri: /stats
+haproxy_stats_refresh: 10s

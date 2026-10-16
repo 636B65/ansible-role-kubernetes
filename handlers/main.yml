@@ -1,0 +1,29 @@
+---
+- name: Apply Kubernetes networking sysctls
+  ansible.builtin.command:
+    cmd: sysctl --system
+  changed_when: true
+  tags:
+    - prerequisites
+
+- name: Restart containerd
+  ansible.builtin.service:
+    name: containerd
+    state: restarted
+  tags:
+    - prerequisites
+    - registry
+
+- name: Restart HAProxy
+  ansible.builtin.service:
+    name: haproxy
+    state: restarted
+  tags:
+    - loadbalancer
+
+- name: Restart Keepalived
+  ansible.builtin.service:
+    name: keepalived
+    state: restarted
+  tags:
+    - loadbalancer

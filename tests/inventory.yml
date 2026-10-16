@@ -1,0 +1,11 @@
+---
+all:
+  children:
+    k8s_control_plane:
+      hosts:
+        test-cp:
+          ansible_host: 192.0.2.11
+    k8s_workers:
+      hosts:
+        test-worker:
+          ansible_host: 192.0.2.21
