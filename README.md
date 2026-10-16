@@ -20,6 +20,15 @@ and Cilium releases at runtime.
   repositories.
 - A free virtual IP address on the control-plane network for Keepalived.
 
+## Architecture
+
+![High-availability Kubernetes cluster architecture](docs/architecture.svg)
+
+The editable diagrams.net source is [docs/architecture.drawio](docs/architecture.drawio).
+The API virtual IP is active on one controller at a time; HAProxy on that
+controller distributes new TCP connections round-robin across healthy API
+servers. Cilium provides pod networking across the cluster.
+
 ## Configure before running
 
 1. **Inventory:** Copy `examples/inventory.yml` to your own inventory and
@@ -63,11 +72,10 @@ appropriate for your deployment.
 
 ## Install and run
 
-Install the role from your private GitHub repository (replace `OWNER` with your
-GitHub username or organization):
+Install the role from the public GitHub repository:
 
 ```sh
-ansible-galaxy role install git+https://github.com/OWNER/ansible-role-kubernetes.git
+ansible-galaxy role install git+https://github.com/636B65/ansible-role-kubernetes.git
 ```
 
 Copy and edit the example files as described above, then run:
