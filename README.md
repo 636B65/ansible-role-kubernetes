@@ -64,6 +64,8 @@ The editable diagrams.net source is [docs/architecture.drawio](docs/architecture
 The API virtual IP is active on one controller at a time; HAProxy on that
 controller distributes new TCP connections round-robin across healthy API
 servers. Cilium provides pod networking across the cluster.
+Keepalived is ordered after systemd-networkd wait-online so the API VIP is
+assigned only after the controller network interface is available at boot.
 
 For an example NGINX workload exposed through a Cilium-managed
 `LoadBalancer` service, see the

@@ -9,6 +9,62 @@
   tags:
     - loadbalancer
 
+- name: Check whether systemd-networkd manages the controller network
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - --quiet
+      - systemd-networkd.service
+  register: kubernetes_networkd_active
+  changed_when: false
+  failed_when: false
+  tags:
+    - loadbalancer
+
+- name: Create the systemd networkd wait-online override directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/systemd-networkd-wait-online.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: kubernetes_networkd_active.rc == 0
+  tags:
+    - loadbalancer
+
+- name: Ensure networkd wait-online is not skipped at boot
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/systemd-networkd-wait-online.service.d/99-ansible.conf
+    content: |
+      [Unit]
+      ConditionPathIsSymbolicLink=
+    owner: root
+    group: root
+    mode: "0644"
+  register: kubernetes_networkd_wait_online_override
+  when: kubernetes_networkd_active.rc == 0
+  tags:
+    - loadbalancer
+
+- name: Reload systemd after configuring networkd wait-online
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when:
+    - kubernetes_networkd_active.rc == 0
+    - kubernetes_networkd_wait_online_override.changed
+  tags:
+    - loadbalancer
+
+- name: Wait for systemd-networkd to configure the controller interface
+  ansible.builtin.systemd:
+    name: systemd-networkd-wait-online.service
+    state: started
+    enabled: true
+  when: kubernetes_networkd_active.rc == 0
+  tags:
+    - loadbalancer
+
 - name: Configure HAProxy for the Kubernetes API
   ansible.builtin.template:
     src: haproxy.cfg.j2
