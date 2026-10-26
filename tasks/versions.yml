@@ -1,0 +1,143 @@
+---
+- name: Require pinned component versions in offline mode
+  ansible.builtin.assert:
+    that:
+      - kubernetes_version != 'latest'
+      - kubernetes_cilium_version != 'latest'
+      - kubernetes_cilium_cli_version != 'latest'
+      - kubernetes_helm_version != 'latest'
+      - kubernetes_longhorn_version != 'latest'
+      - kubernetes_metrics_server_version != 'latest'
+    fail_msg: >-
+      Offline mode installs from a staged bundle and cannot resolve "latest".
+      Pin every component version to the release that was staged.
+  run_once: true
+  when: kubernetes_offline_mode
+
+- name: Read the latest stable Kubernetes release
+  ansible.builtin.uri:
+    url: https://dl.k8s.io/release/stable.txt
+    return_content: true
+    timeout: 30
+  register: kubernetes_stable_release
+  run_once: true
+  when: kubernetes_version == 'latest'
+
+- name: Read the latest stable Cilium release
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/cilium/cilium/releases/latest
+    return_content: true
+    headers:
+      Accept: application/vnd.github+json
+    timeout: 30
+  register: kubernetes_cilium_latest_release
+  run_once: true
+  when: kubernetes_cilium_version == 'latest'
+
+- name: Read the latest stable Cilium CLI release
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/cilium/cilium-cli/releases/latest
+    return_content: true
+    headers:
+      Accept: application/vnd.github+json
+    timeout: 30
+  register: kubernetes_cilium_cli_latest_release
+  run_once: true
+  when: kubernetes_cilium_cli_version == 'latest'
+
+- name: Read stable Helm releases
+  ansible.builtin.uri:
+    url: "{{ kubernetes_helm_releases_url }}"
+    return_content: true
+    headers:
+      Accept: application/vnd.github+json
+    timeout: 30
+  register: kubernetes_helm_releases
+  run_once: true
+  when: kubernetes_helm_version == 'latest'
+
+- name: Read the latest stable Longhorn release
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/longhorn/longhorn/releases/latest
+    return_content: true
+    headers:
+      Accept: application/vnd.github+json
+    timeout: 30
+  register: kubernetes_longhorn_latest_release
+  run_once: true
+  when: kubernetes_longhorn_version == 'latest'
+
+- name: Read the latest stable metrics-server release
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/kubernetes-sigs/metrics-server/releases/latest
+    return_content: true
+    headers:
+      Accept: application/vnd.github+json
+    timeout: 30
+  register: kubernetes_metrics_server_latest_release
+  run_once: true
+  when: kubernetes_metrics_server_version == 'latest'
+
+- name: Resolve the component versions used by this run
+  ansible.builtin.set_fact:
+    kubernetes_resolved_version: >-
+      {{
+        (kubernetes_stable_release.content | trim
+        if kubernetes_version == 'latest' else kubernetes_version)
+        | regex_replace('^v', '')
+      }}
+    kubernetes_cilium_resolved_version: >-
+      {{
+        (kubernetes_cilium_latest_release.json.tag_name
+        if kubernetes_cilium_version == 'latest' else kubernetes_cilium_version)
+        | regex_replace('^v', '')
+      }}
+    kubernetes_cilium_cli_resolved_version: >-
+      v{{
+        (kubernetes_cilium_cli_latest_release.json.tag_name
+        if kubernetes_cilium_cli_version == 'latest' else kubernetes_cilium_cli_version)
+        | regex_replace('^v', '')
+      }}
+    kubernetes_helm_resolved_version: >-
+      v{{
+        (
+          kubernetes_helm_releases.json
+          | selectattr('tag_name', 'match', '^v3\.[0-9]+\.[0-9]+$')
+          | selectattr('prerelease', 'equalto', false)
+          | map(attribute='tag_name')
+          | first
+          if kubernetes_helm_version == 'latest' else kubernetes_helm_version
+        )
+        | regex_replace('^v', '')
+      }}
+    kubernetes_longhorn_resolved_version: >-
+      {{
+        (kubernetes_longhorn_latest_release.json.tag_name
+        if kubernetes_longhorn_version == 'latest' else kubernetes_longhorn_version)
+        | regex_replace('^v', '')
+      }}
+    kubernetes_metrics_server_resolved_version: >-
+      v{{
+        (kubernetes_metrics_server_latest_release.json.tag_name
+        if kubernetes_metrics_server_version == 'latest' else kubernetes_metrics_server_version)
+        | regex_replace('^v', '')
+      }}
+
+- name: Derive the Kubernetes package repository minor version
+  ansible.builtin.set_fact:
+    kubernetes_resolved_minor: "{{ kubernetes_resolved_version | regex_search('^[0-9]+\\.[0-9]+') }}"
+
+- name: Validate the resolved component versions
+  ansible.builtin.assert:
+    that:
+      - kubernetes_resolved_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+      - kubernetes_cilium_resolved_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+      - kubernetes_cilium_cli_resolved_version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
+      - kubernetes_helm_resolved_version is match('^v3\.[0-9]+\.[0-9]+$')
+      - kubernetes_longhorn_resolved_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+      - kubernetes_metrics_server_resolved_version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
+    fail_msg: >-
+      One or more component versions are not a stable semantic version. The
+      cilium_offline tasks need Helm v3. Check the version variables in
+      defaults/main.yml.
+    quiet: true

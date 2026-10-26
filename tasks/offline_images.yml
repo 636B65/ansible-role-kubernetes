@@ -1,0 +1,38 @@
+---
+- name: Read the image list from the offline bundle
+  ansible.builtin.slurp:
+    src: "{{ kubernetes_offline_images_list }}"
+  register: kubernetes_offline_bundle_images
+
+- name: List the images already known to containerd
+  ansible.builtin.command:
+    argv:
+      - ctr
+      - --namespace
+      - k8s.io
+      - images
+      - list
+      - --quiet
+  register: kubernetes_containerd_images
+  changed_when: false
+
+- name: Import missing images from the offline bundle into containerd
+  ansible.builtin.command:
+    argv:
+      - ctr
+      - --namespace
+      - k8s.io
+      - images
+      - import
+      - "{{ kubernetes_image_archive }}"
+  vars:
+    kubernetes_image_ref: "{{ item }}"
+  loop: >-
+    {{
+      (kubernetes_offline_bundle_images.content | b64decode).splitlines()
+      | map('trim')
+      | reject('equalto', '')
+      | reject('in', kubernetes_containerd_images.stdout_lines)
+      | list
+    }}
+  changed_when: true

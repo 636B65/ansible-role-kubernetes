@@ -1,0 +1,8 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Back up the local Kubernetes etcd member
+After=kubelet.service containerd.service
+
+[Service]
+Type=oneshot
+ExecStart={{ kubernetes_etcd_backup_script }}

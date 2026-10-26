@@ -15,8 +15,33 @@ kubernetes_apiserver_port: 6443
 containerd_package: containerd
 kubernetes_hosts_file_path: /etc/hosts
 
+# Component versions. Each value is pinned so repeated runs install the same
+# release. Set a value to "latest" to resolve the newest stable upstream
+# release at runtime instead. Renovate updates the pinned values (see
+# renovate.json); the comments below are its version annotations.
+# renovate: datasource=github-releases depName=kubernetes/kubernetes
+kubernetes_version: "1.36.5"
+# renovate: datasource=github-releases depName=cilium/cilium
+kubernetes_cilium_version: "1.20.4"
+# renovate: datasource=github-releases depName=cilium/cilium-cli
+kubernetes_cilium_cli_version: "v0.20.1"
+# renovate: datasource=github-releases depName=helm/helm
+kubernetes_helm_version: "v3.22.1"
+# renovate: datasource=github-releases depName=longhorn/longhorn
+kubernetes_longhorn_version: "1.13.0"
+# renovate: datasource=github-releases depName=kubernetes-sigs/metrics-server
+kubernetes_metrics_server_version: "v0.9.0"
+# renovate: datasource=helm registryUrl=https://prometheus-community.github.io/helm-charts depName=kube-prometheus-stack
+kubernetes_prometheus_stack_version: "92.14.0"
+
+# Packages that apt must never upgrade outside the role's upgrade flow.
+kubernetes_held_packages:
+  - kubelet
+  - kubeadm
+  - kubectl
+
 kubernetes_registry_namespace: local-registry
-kubernetes_registry_image: registry:2
+kubernetes_registry_image: registry:2.8.3
 kubernetes_registry_hostname: registry.k8s.local
 kubernetes_registry_node_port: 30500
 kubernetes_registry_storage_path: /var/lib/kubernetes-registry
@@ -24,18 +49,90 @@ kubernetes_registry_node: "{{ groups[kubernetes_control_plane_group][0] }}"
 kubernetes_registry_storage_size: 8Gi
 kubernetes_registry_storage_class: kubernetes-registry-longhorn
 kubernetes_registry_replicas: 2
-kubernetes_longhorn_version: latest
 kubernetes_longhorn_replica_count: 3
 kubernetes_registry_images:
-  - source: docker.io/library/ubuntu:latest
-    destination: ubuntu:latest
-  - source: docker.io/library/nginx:stable
-    destination: nginx:stable
+  - source: docker.io/library/ubuntu:26.04
+    destination: ubuntu:26.04
+  - source: docker.io/library/nginx:1.30.6
+    destination: nginx:1.30.6
+# Copy an image again even when its destination tag already exists in the
+# internal registry. Leave false for pinned, immutable tags.
+kubernetes_registry_images_force_refresh: false
 
 kubernetes_offline_assets_directory: /opt/kubernetes-offline
 kubernetes_helm_releases_url: https://api.github.com/repos/helm/helm/releases?per_page=100
+
+# Install from a previously staged offline bundle (see docs/offline.md)
+# instead of upstream package repositories and image registries.
+kubernetes_offline_mode: false
+# Extra images to stage in the offline bundle in addition to the ones the role
+# discovers from the running cluster.
+kubernetes_offline_extra_images: []
 
 haproxy_stats_bind_address: "*"
 haproxy_stats_port: 8404
 haproxy_stats_uri: /stats
 haproxy_stats_refresh: 10s
+
+# API server hardening. Applied when a cluster is initialized; roll it out to
+# an existing cluster with the upgrade playbook (see docs/hardening.md).
+kubernetes_hardening_enabled: true
+kubernetes_hardening_directory: /etc/kubernetes/hardening
+kubernetes_audit_log_enabled: true
+kubernetes_audit_log_directory: /var/log/kubernetes/audit
+kubernetes_audit_log_maxage: 30
+kubernetes_audit_log_maxbackup: 10
+kubernetes_audit_log_maxsize: 100
+kubernetes_secrets_encryption_enabled: true
+# "active" encrypts new and rewritten Secrets. "prepare" only teaches every
+# API server to read encrypted Secrets; use it for the first rollout on an
+# existing multi-controller cluster.
+kubernetes_secrets_encryption_stage: active
+# Base64-encoded 32-byte key. Leave empty to generate one on the first
+# controller; the role then reuses the key stored on that controller.
+kubernetes_secrets_encryption_key: ""
+kubernetes_pod_security_enabled: true
+kubernetes_pod_security_enforce: baseline
+kubernetes_pod_security_audit: restricted
+kubernetes_pod_security_warn: restricted
+kubernetes_pod_security_exempt_namespaces:
+  - kube-system
+  - longhorn-system
+  - "{{ kubernetes_registry_namespace }}"
+  - "{{ kubernetes_prometheus_stack_namespace }}"
+
+# Scheduled etcd snapshots on every control-plane node.
+kubernetes_etcd_backup_enabled: true
+kubernetes_etcd_backup_directory: /var/backups/kubernetes-etcd
+kubernetes_etcd_backup_schedule: "*-*-* 02:15:00"
+kubernetes_etcd_backup_retention_days: 7
+
+# Host firewall (nftables). Disabled by default because a wrong admin network
+# can lock you out; review docs/firewall.md before enabling it.
+kubernetes_firewall_enabled: false
+kubernetes_firewall_ssh_port: 22
+kubernetes_firewall_admin_networks:
+  - 0.0.0.0/0
+kubernetes_firewall_api_networks:
+  - 0.0.0.0/0
+kubernetes_firewall_nodeport_networks:
+  - 0.0.0.0/0
+kubernetes_firewall_extra_input_rules: []
+
+# Observability.
+kubernetes_metrics_server_enabled: true
+# kubeadm kubelets use self-signed serving certificates, so metrics-server
+# cannot verify them without extra certificate management.
+kubernetes_metrics_server_kubelet_insecure_tls: true
+kubernetes_hubble_enabled: true
+kubernetes_prometheus_stack_enabled: false
+kubernetes_prometheus_stack_namespace: monitoring
+kubernetes_grafana_admin_password: "changeme"
+
+# Upgrade flow (examples/upgrade.yml, tag "upgrade").
+kubernetes_upgrade_drain_timeout: 600s
+kubernetes_upgrade_cilium: false
+
+# Node removal flow (examples/remove-node.yml, tag "remove_node").
+kubernetes_remove_nodes: []
+kubernetes_remove_node_eviction_timeout: 1800

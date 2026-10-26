@@ -1,0 +1,211 @@
+---
+- name: Create the manifest directory for observability components
+  ansible.builtin.file:
+    path: "{{ kubernetes_offline_manifests_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_metrics_server_enabled
+
+- name: Download the pinned metrics-server manifest
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/kubernetes-sigs/metrics-server/releases/download/{{
+      kubernetes_metrics_server_resolved_version }}/components.yaml
+    dest: "{{ kubernetes_metrics_server_manifest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_metrics_server_enabled
+    - not kubernetes_offline_mode
+
+- name: Install metrics-server
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ kubernetes_metrics_server_manifest }}"
+  register: kubernetes_metrics_server_apply
+  changed_when: >-
+    'created' in kubernetes_metrics_server_apply.stdout
+    or 'configured' in kubernetes_metrics_server_apply.stdout
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_metrics_server_enabled
+
+- name: Read the metrics-server arguments
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - get
+      - deployment
+      - metrics-server
+      - --namespace
+      - kube-system
+      - --output
+      - jsonpath={.spec.template.spec.containers[0].args}
+  register: kubernetes_metrics_server_args
+  changed_when: false
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_metrics_server_enabled
+    - kubernetes_metrics_server_kubelet_insecure_tls
+
+- name: Let metrics-server accept the self-signed kubelet serving certificates
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - patch
+      - deployment
+      - metrics-server
+      - --namespace
+      - kube-system
+      - --type=json
+      - --patch
+      - '[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+  changed_when: true
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_metrics_server_enabled
+    - kubernetes_metrics_server_kubelet_insecure_tls
+    - "'--kubelet-insecure-tls' not in kubernetes_metrics_server_args.stdout"
+
+- name: Wait for metrics-server to become ready
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - rollout
+      - status
+      - deployment/metrics-server
+      - --namespace
+      - kube-system
+      - --timeout=300s
+  changed_when: false
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_metrics_server_enabled
+
+- name: Check whether Hubble Relay is deployed
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - get
+      - deployment
+      - hubble-relay
+      - --namespace
+      - kube-system
+  register: kubernetes_hubble_relay
+  changed_when: false
+  failed_when: false
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_hubble_enabled
+
+- name: Enable Hubble Relay and the Hubble UI on an existing Cilium installation
+  ansible.builtin.command:
+    argv:
+      - cilium
+      - hubble
+      - enable
+      - --ui
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  changed_when: true
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_hubble_enabled
+    - kubernetes_hubble_relay.rc != 0
+
+- name: Wait for Cilium and Hubble to become ready
+  ansible.builtin.command:
+    argv:
+      - cilium
+      - status
+      - --wait
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  changed_when: false
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_hubble_enabled
+
+- name: Validate the kube-prometheus-stack settings
+  ansible.builtin.assert:
+    that:
+      - not kubernetes_offline_mode
+      - kubernetes_grafana_admin_password != 'changeme'
+      - kubernetes_grafana_admin_password | length >= 12
+    fail_msg: >-
+      kube-prometheus-stack is installed from its upstream Helm repository and
+      cannot be used in offline mode. Set kubernetes_grafana_admin_password to
+      a secret of at least 12 characters, preferably from Ansible Vault.
+  run_once: true
+  when: kubernetes_prometheus_stack_enabled
+
+- name: Read the installed kube-prometheus-stack release
+  ansible.builtin.command:
+    argv:
+      - helm
+      - list
+      - --namespace
+      - "{{ kubernetes_prometheus_stack_namespace }}"
+      - --filter
+      - ^kube-prometheus-stack$
+      - --output
+      - json
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  register: kubernetes_prometheus_stack_releases
+  changed_when: false
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_prometheus_stack_enabled
+
+- name: Install or upgrade kube-prometheus-stack
+  ansible.builtin.command:
+    argv:
+      - helm
+      - upgrade
+      - --install
+      - kube-prometheus-stack
+      - kube-prometheus-stack
+      - --repo
+      - https://prometheus-community.github.io/helm-charts
+      - --version
+      - "{{ kubernetes_prometheus_stack_version }}"
+      - --namespace
+      - "{{ kubernetes_prometheus_stack_namespace }}"
+      - --create-namespace
+      - --set-string
+      - grafana.adminPassword={{ kubernetes_grafana_admin_password }}
+      - --wait
+      - --timeout
+      - 15m
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  changed_when: true
+  no_log: true
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_prometheus_stack_enabled
+    - >-
+      kubernetes_prometheus_stack_releases.stdout | from_json
+      | selectattr('status', 'equalto', 'deployed')
+      | selectattr('chart', 'equalto', 'kube-prometheus-stack-' ~ kubernetes_prometheus_stack_version)
+      | list | length == 0

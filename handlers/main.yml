@@ -27,3 +27,10 @@
     state: restarted
   tags:
     - loadbalancer
+
+- name: Reload Kubernetes host firewall
+  ansible.builtin.systemd:
+    name: kubernetes-firewall.service
+    state: reloaded
+  tags:
+    - firewall

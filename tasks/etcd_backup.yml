@@ -1,0 +1,49 @@
+---
+- name: Create the etcd backup directory
+  ansible.builtin.file:
+    path: "{{ kubernetes_etcd_backup_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Install the etcd backup script
+  ansible.builtin.template:
+    src: kubernetes-etcd-backup.sh.j2
+    dest: "{{ kubernetes_etcd_backup_script }}"
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Install the etcd backup service and timer
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/etc/systemd/system/{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - src: kubernetes-etcd-backup.service.j2
+      dest: "{{ kubernetes_etcd_backup_service }}"
+    - src: kubernetes-etcd-backup.timer.j2
+      dest: kubernetes-etcd-backup.timer
+  register: kubernetes_etcd_backup_units
+
+- name: Enable the scheduled etcd backup
+  ansible.builtin.systemd:
+    name: kubernetes-etcd-backup.timer
+    state: started
+    enabled: true
+    daemon_reload: "{{ kubernetes_etcd_backup_units.changed }}"
+
+- name: Look for an existing etcd snapshot
+  ansible.builtin.find:
+    paths: "{{ kubernetes_etcd_backup_directory }}"
+    patterns: etcd-snapshot-*.db
+  register: kubernetes_etcd_existing_snapshots
+
+- name: Take the first etcd snapshot
+  ansible.builtin.systemd:
+    name: "{{ kubernetes_etcd_backup_service }}"
+    state: started
+  when: kubernetes_etcd_existing_snapshots.matched == 0

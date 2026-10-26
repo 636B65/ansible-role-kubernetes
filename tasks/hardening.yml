@@ -1,0 +1,131 @@
+---
+- name: Create the API server hardening configuration directory
+  ansible.builtin.file:
+    path: "{{ kubernetes_hardening_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: inventory_hostname in groups[kubernetes_control_plane_group]
+
+- name: Create the API server audit log directory
+  ansible.builtin.file:
+    path: "{{ kubernetes_audit_log_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when:
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+    - kubernetes_audit_log_enabled
+
+- name: Configure the API server audit policy
+  ansible.builtin.template:
+    src: audit-policy.yaml.j2
+    dest: "{{ kubernetes_audit_policy_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+    - kubernetes_audit_log_enabled
+
+- name: Configure Pod Security admission defaults
+  ansible.builtin.template:
+    src: admission-config.yaml.j2
+    dest: "{{ kubernetes_admission_config_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+    - kubernetes_pod_security_enabled
+
+- name: Read the Secret encryption key stored on the first controller
+  ansible.builtin.slurp:
+    src: "{{ kubernetes_encryption_config_file }}"
+  register: kubernetes_existing_encryption_config
+  failed_when: false
+  no_log: true
+  delegate_to: "{{ kubernetes_first_controller }}"
+  run_once: true
+  when: kubernetes_secrets_encryption_enabled
+
+- name: Extract the existing Secret encryption key
+  ansible.builtin.set_fact:
+    kubernetes_existing_encryption_key: >-
+      {{
+        (
+          (kubernetes_existing_encryption_config.content | b64decode | from_yaml).resources[0].providers
+          | selectattr('secretbox', 'defined')
+          | first
+        ).secretbox['keys'][0].secret
+        if kubernetes_existing_encryption_config.content is defined
+        else ''
+      }}
+  no_log: true
+  when: kubernetes_secrets_encryption_enabled
+
+- name: Refuse to replace an existing Secret encryption key
+  ansible.builtin.assert:
+    that:
+      - >-
+        kubernetes_secrets_encryption_key | length == 0
+        or kubernetes_existing_encryption_key | length == 0
+        or kubernetes_secrets_encryption_key == kubernetes_existing_encryption_key
+    fail_msg: >-
+      kubernetes_secrets_encryption_key differs from the key already stored on
+      {{ kubernetes_first_controller }}. Replacing it would make existing
+      Secrets unreadable; follow the key rotation steps in docs/hardening.md.
+  run_once: true
+  when: kubernetes_secrets_encryption_enabled
+
+- name: Generate a Secret encryption key on the first controller
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - import base64, os; print(base64.b64encode(os.urandom(32)).decode())
+  register: kubernetes_generated_encryption_key
+  changed_when: false
+  no_log: true
+  delegate_to: "{{ kubernetes_first_controller }}"
+  run_once: true
+  when:
+    - kubernetes_secrets_encryption_enabled
+    - kubernetes_secrets_encryption_key | length == 0
+    - kubernetes_existing_encryption_key | length == 0
+
+- name: Select the Secret encryption key for every controller
+  ansible.builtin.set_fact:
+    kubernetes_secrets_encryption_key_value: >-
+      {{
+        kubernetes_secrets_encryption_key
+        or kubernetes_existing_encryption_key
+        or kubernetes_generated_encryption_key.stdout | trim
+      }}
+  no_log: true
+  when: kubernetes_secrets_encryption_enabled
+
+- name: Validate the Secret encryption key
+  ansible.builtin.assert:
+    that:
+      - kubernetes_secrets_encryption_key_value is match('^[A-Za-z0-9+/]{43}=$')
+      - kubernetes_secrets_encryption_stage in ['prepare', 'active']
+    fail_msg: >-
+      The Secret encryption key must be a base64-encoded 32-byte value and
+      kubernetes_secrets_encryption_stage must be "prepare" or "active".
+    quiet: true
+  when: kubernetes_secrets_encryption_enabled
+
+- name: Configure encryption of Secrets at rest
+  ansible.builtin.template:
+    src: encryption-config.yaml.j2
+    dest: "{{ kubernetes_encryption_config_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  when:
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+    - kubernetes_secrets_encryption_enabled

@@ -41,7 +41,7 @@
 
 - name: Determine the Cilium release installed in the cluster
   ansible.builtin.set_fact:
-    kubernetes_cilium_version: >-
+    kubernetes_cilium_installed_version: >-
       {{
         (
           (kubernetes_cilium_daemonset.stdout | from_json).spec.template.spec.containers
@@ -58,7 +58,7 @@
 - name: Validate the installed Cilium version
   ansible.builtin.assert:
     that:
-      - kubernetes_cilium_version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
+      - kubernetes_cilium_installed_version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
     fail_msg: >-
       Could not determine a stable Cilium version from the running agent image.
       Ensure Cilium is installed and uses a semantic release tag before staging
@@ -67,38 +67,11 @@
   tags:
     - cilium_offline
 
-- name: Read stable Helm v3 releases
-  ansible.builtin.uri:
-    url: "{{ kubernetes_helm_releases_url }}"
-    return_content: true
-    headers:
-      Accept: application/vnd.github+json
-    timeout: 30
-  register: kubernetes_helm_releases
-  when: inventory_hostname in groups[kubernetes_control_plane_group]
-  tags:
-    - cilium_offline
-
-- name: Select the latest stable Helm v3 release
-  ansible.builtin.set_fact:
-    kubernetes_helm_release: >-
-      {{
-        kubernetes_helm_releases.json
-        | selectattr('tag_name', 'match', '^v3\.')
-        | selectattr('prerelease', 'equalto', false)
-        | first
-      }}
-    kubernetes_helm_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_architecture, '') }}"
-  when: inventory_hostname in groups[kubernetes_control_plane_group]
-  tags:
-    - cilium_offline
-
-- name: Validate the Helm release architecture
+- name: Validate the Helm architecture
   ansible.builtin.assert:
     that:
-      - kubernetes_helm_arch in ['amd64', 'arm64']
-      - kubernetes_helm_release.tag_name is match('^v3\.[0-9]+\.[0-9]+$')
-    fail_msg: "No stable Helm v3 release is available for {{ ansible_architecture }}."
+      - kubernetes_architecture in ['amd64', 'arm64']
+    fail_msg: "Helm and the Cilium CLI are not staged for {{ ansible_architecture }}."
   when: inventory_hostname in groups[kubernetes_control_plane_group]
   tags:
     - cilium_offline
@@ -121,19 +94,21 @@
 - name: Download the Helm archive for offline use
   ansible.builtin.get_url:
     url: >-
-      https://get.helm.sh/helm-{{ kubernetes_helm_release.tag_name }}-linux-{{
-      kubernetes_helm_arch }}.tar.gz
+      https://get.helm.sh/helm-{{ kubernetes_helm_resolved_version }}-linux-{{
+      kubernetes_architecture }}.tar.gz
     dest: >-
       {{ kubernetes_offline_assets_directory }}/helm/helm-{{
-      kubernetes_helm_release.tag_name }}-linux-{{ kubernetes_helm_arch }}.tar.gz
+      kubernetes_helm_resolved_version }}-linux-{{ kubernetes_architecture }}.tar.gz
     mode: "0644"
-  when: inventory_hostname in groups[kubernetes_control_plane_group]
+  when:
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+    - not kubernetes_offline_mode
   tags:
     - cilium_offline
 
 - name: Create the Helm extraction directory
   ansible.builtin.file:
-    path: "/tmp/kubernetes-helm-{{ kubernetes_helm_release.tag_name }}"
+    path: "/tmp/kubernetes-helm-{{ kubernetes_helm_resolved_version }}"
     state: directory
     owner: root
     group: root
@@ -146,12 +121,12 @@
   ansible.builtin.unarchive:
     src: >-
       {{ kubernetes_offline_assets_directory }}/helm/helm-{{
-      kubernetes_helm_release.tag_name }}-linux-{{ kubernetes_helm_arch }}.tar.gz
-    dest: "/tmp/kubernetes-helm-{{ kubernetes_helm_release.tag_name }}"
+      kubernetes_helm_resolved_version }}-linux-{{ kubernetes_architecture }}.tar.gz
+    dest: "/tmp/kubernetes-helm-{{ kubernetes_helm_resolved_version }}"
     remote_src: true
     creates: >-
-      /tmp/kubernetes-helm-{{ kubernetes_helm_release.tag_name }}/linux-{{
-      kubernetes_helm_arch }}/helm
+      /tmp/kubernetes-helm-{{ kubernetes_helm_resolved_version }}/linux-{{
+      kubernetes_architecture }}/helm
   when: inventory_hostname in groups[kubernetes_control_plane_group]
   tags:
     - cilium_offline
@@ -159,8 +134,8 @@
 - name: Install Helm on control-plane nodes
   ansible.builtin.copy:
     src: >-
-      /tmp/kubernetes-helm-{{ kubernetes_helm_release.tag_name }}/linux-{{
-      kubernetes_helm_arch }}/helm
+      /tmp/kubernetes-helm-{{ kubernetes_helm_resolved_version }}/linux-{{
+      kubernetes_architecture }}/helm
     dest: /usr/local/bin/helm
     remote_src: true
     owner: root
@@ -170,65 +145,24 @@
   tags:
     - cilium_offline
 
-- name: Read the latest stable Cilium CLI release
-  ansible.builtin.uri:
-    url: https://api.github.com/repos/cilium/cilium-cli/releases/latest
-    return_content: true
-    headers:
-      Accept: application/vnd.github+json
-    timeout: 30
-  register: kubernetes_offline_cilium_cli_release
-  when: inventory_hostname in groups[kubernetes_control_plane_group]
-  tags:
-    - cilium_offline
-
-- name: Select the Cilium CLI archive for this controller architecture
-  ansible.builtin.set_fact:
-    kubernetes_offline_cilium_cli_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_architecture, '') }}"
-    kubernetes_offline_cilium_cli_archive_url: >-
-      {{
-        kubernetes_offline_cilium_cli_release.json.assets
-        | selectattr(
-            'name',
-            'equalto',
-            'cilium-linux-'
-            ~ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_architecture, '')
-            ~ '.tar.gz'
-          )
-        | map(attribute='browser_download_url')
-        | first
-        | default('')
-      }}
-    kubernetes_offline_cilium_cli_version: "{{ kubernetes_offline_cilium_cli_release.json.tag_name }}"
-  when: inventory_hostname in groups[kubernetes_control_plane_group]
-  tags:
-    - cilium_offline
-
-- name: Validate the Cilium CLI release architecture
-  ansible.builtin.assert:
-    that:
-      - kubernetes_offline_cilium_cli_arch in ['amd64', 'arm64']
-      - kubernetes_offline_cilium_cli_archive_url | length > 0
-    fail_msg: "No Cilium CLI Linux archive is available for {{ ansible_architecture }}."
-  when: inventory_hostname in groups[kubernetes_control_plane_group]
-  tags:
-    - cilium_offline
-
 - name: Download the Cilium CLI archive for offline use
   ansible.builtin.get_url:
-    url: "{{ kubernetes_offline_cilium_cli_archive_url }}"
-    dest: >-
-      {{ kubernetes_offline_assets_directory }}/cilium-cli/cilium-cli-{{
-      kubernetes_offline_cilium_cli_version }}-linux-{{
-      kubernetes_offline_cilium_cli_arch }}.tar.gz
+    url: >-
+      https://github.com/cilium/cilium-cli/releases/download/{{
+      kubernetes_cilium_cli_resolved_version }}/cilium-linux-{{ kubernetes_architecture }}.tar.gz
+    dest: "{{ kubernetes_cilium_cli_archive }}"
+    owner: root
+    group: root
     mode: "0644"
-  when: inventory_hostname in groups[kubernetes_control_plane_group]
+  when:
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+    - not kubernetes_offline_mode
   tags:
     - cilium_offline
 
 - name: Create the Cilium CLI extraction directory
   ansible.builtin.file:
-    path: "/tmp/kubernetes-cilium-cli-{{ kubernetes_offline_cilium_cli_version }}"
+    path: "/tmp/kubernetes-cilium-cli-{{ kubernetes_cilium_cli_resolved_version }}"
     state: directory
     owner: root
     group: root
@@ -239,29 +173,50 @@
 
 - name: Extract the Cilium CLI into a versioned temporary directory
   ansible.builtin.unarchive:
-    src: >-
-      {{ kubernetes_offline_assets_directory }}/cilium-cli/cilium-cli-{{
-      kubernetes_offline_cilium_cli_version }}-linux-{{
-      kubernetes_offline_cilium_cli_arch }}.tar.gz
-    dest: "/tmp/kubernetes-cilium-cli-{{ kubernetes_offline_cilium_cli_version }}"
+    src: "{{ kubernetes_cilium_cli_archive }}"
+    dest: "/tmp/kubernetes-cilium-cli-{{ kubernetes_cilium_cli_resolved_version }}"
     remote_src: true
     include:
       - cilium
-    creates: >-
-      /tmp/kubernetes-cilium-cli-{{ kubernetes_offline_cilium_cli_version }}/cilium
+    creates: "/tmp/kubernetes-cilium-cli-{{ kubernetes_cilium_cli_resolved_version }}/cilium"
   when: inventory_hostname in groups[kubernetes_control_plane_group]
   tags:
     - cilium_offline
 
 - name: Install the Cilium CLI on control-plane nodes
   ansible.builtin.copy:
-    src: "/tmp/kubernetes-cilium-cli-{{ kubernetes_offline_cilium_cli_version }}/cilium"
+    src: "/tmp/kubernetes-cilium-cli-{{ kubernetes_cilium_cli_resolved_version }}/cilium"
     dest: /usr/local/bin/cilium
     remote_src: true
     owner: root
     group: root
     mode: "0755"
   when: inventory_hostname in groups[kubernetes_control_plane_group]
+  tags:
+    - cilium_offline
+
+- name: Check whether each controller already has the Cilium chart archive
+  ansible.builtin.stat:
+    path: >-
+      {{ kubernetes_offline_assets_directory }}/cilium/cilium-{{
+      kubernetes_cilium_installed_version }}.tgz
+  register: kubernetes_cilium_chart_archive_stat
+  when: inventory_hostname in groups[kubernetes_control_plane_group]
+  tags:
+    - cilium_offline
+
+- name: Find the controllers that still need the Cilium chart archive
+  ansible.builtin.set_fact:
+    kubernetes_cilium_chart_missing_hosts: >-
+      {{
+        groups[kubernetes_control_plane_group]
+        | select('in', ansible_play_hosts)
+        | map('extract', hostvars)
+        | rejectattr('kubernetes_cilium_chart_archive_stat.stat.exists')
+        | map(attribute='inventory_hostname')
+        | list
+      }}
+  run_once: true
   tags:
     - cilium_offline
 
@@ -280,42 +235,50 @@
       - "120"
       - >-
         https://raw.githubusercontent.com/cilium/charts/master/cilium-{{
-        kubernetes_cilium_version | regex_replace('^v', '') }}.tgz
+        kubernetes_cilium_installed_version | regex_replace('^v', '') }}.tgz
       - --output
-      - "/tmp/kubernetes-offline-cilium-{{ kubernetes_cilium_version }}.tgz"
-    creates: "/tmp/kubernetes-offline-cilium-{{ kubernetes_cilium_version }}.tgz"
+      - "/tmp/kubernetes-offline-cilium-{{ kubernetes_cilium_installed_version }}.tgz"
+    creates: "/tmp/kubernetes-offline-cilium-{{ kubernetes_cilium_installed_version }}.tgz"
   delegate_to: localhost
   become: false
   vars:
     ansible_become: false
   run_once: true
-  when: inventory_hostname in groups[kubernetes_control_plane_group]
+  when:
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+    - kubernetes_cilium_chart_missing_hosts | length > 0
+    - not kubernetes_offline_mode
   tags:
     - cilium_offline
 
 - name: Copy the Cilium chart archive to control-plane nodes
   ansible.builtin.copy:
-    src: "/tmp/kubernetes-offline-cilium-{{ kubernetes_cilium_version }}.tgz"
+    src: "/tmp/kubernetes-offline-cilium-{{ kubernetes_cilium_installed_version }}.tgz"
     dest: >-
       {{ kubernetes_offline_assets_directory }}/cilium/cilium-{{
-      kubernetes_cilium_version }}.tgz
+      kubernetes_cilium_installed_version }}.tgz
     owner: root
     group: root
     mode: "0644"
-  when: inventory_hostname in groups[kubernetes_control_plane_group]
+  when:
+    - inventory_hostname in kubernetes_cilium_chart_missing_hosts
+    - not kubernetes_offline_mode
   tags:
     - cilium_offline
 
 - name: Remove the temporary Cilium chart archive from the Ansible controller
   ansible.builtin.file:
-    path: "/tmp/kubernetes-offline-cilium-{{ kubernetes_cilium_version }}.tgz"
+    path: "/tmp/kubernetes-offline-cilium-{{ kubernetes_cilium_installed_version }}.tgz"
     state: absent
   delegate_to: localhost
   become: false
   vars:
     ansible_become: false
   run_once: true
-  when: inventory_hostname in groups[kubernetes_control_plane_group]
+  when:
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+    - kubernetes_cilium_chart_missing_hosts | length > 0
+    - not kubernetes_offline_mode
   tags:
     - cilium_offline
 
@@ -350,6 +313,7 @@
         owner: root
         group: root
         mode: "0600"
+      changed_when: false
       no_log: true
 
     - name: Render the installed Cilium configuration to discover every enabled image
@@ -358,7 +322,7 @@
           - helm
           - template
           - cilium
-          - "{{ kubernetes_offline_assets_directory }}/cilium/cilium-{{ kubernetes_cilium_version }}.tgz"
+          - "{{ kubernetes_offline_assets_directory }}/cilium/cilium-{{ kubernetes_cilium_installed_version }}.tgz"
           - --namespace
           - kube-system
           - --values
@@ -371,6 +335,7 @@
       ansible.builtin.file:
         path: /tmp/kubernetes-cilium-helm-values.yaml
         state: absent
+      changed_when: false
 
 - name: Extract unique upstream image references from the Cilium chart
   ansible.builtin.set_fact:
@@ -401,7 +366,31 @@
   tags:
     - cilium_offline
 
-- name: Copy enabled Cilium images into the internal registry
+- name: Check which Cilium images are already in the internal registry
+  ansible.builtin.uri:
+    url: >-
+      http://{{ kubernetes_registry_hostname }}:{{ kubernetes_registry_node_port
+      }}/v2/{{ item | regex_replace('^quay.io/', '')
+      | regex_replace('@sha256:.*$', '') | regex_replace(':', '/manifests/') }}
+    method: HEAD
+    headers:
+      Accept: >-
+        application/vnd.docker.distribution.manifest.list.v2+json,
+        application/vnd.oci.image.index.v1+json,
+        application/vnd.docker.distribution.manifest.v2+json,
+        application/vnd.oci.image.manifest.v1+json
+    status_code:
+      - 200
+      - 404
+    return_content: false
+    timeout: 20
+  loop: "{{ kubernetes_cilium_offline_images }}"
+  register: kubernetes_cilium_registry_images
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - cilium_offline
+
+- name: Copy missing Cilium images into the internal registry
   ansible.builtin.command:
     argv:
       - skopeo
@@ -410,17 +399,28 @@
       - "3"
       - --all
       - --dest-tls-verify=false
-      - "docker://{{ item | regex_replace('@sha256:.*$', '') }}"
+      - >-
+        {{
+          'docker-archive:' ~ kubernetes_image_archive
+          if kubernetes_offline_mode
+          else 'docker://' ~ (item.item | regex_replace('@sha256:.*$', ''))
+        }}
       - >-
         docker://{{ kubernetes_registry_hostname }}:{{ kubernetes_registry_node_port
-        }}/{{ item | regex_replace('^quay.io/', '') | regex_replace('@sha256:.*$', '') }}
-  loop: "{{ kubernetes_cilium_offline_images }}"
+        }}/{{ item.item | regex_replace('^quay.io/', '') | regex_replace('@sha256:.*$', '') }}
+  vars:
+    kubernetes_image_ref: "{{ item.item }}"
+  loop: "{{ kubernetes_cilium_registry_images.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
   register: kubernetes_cilium_image_copy
   changed_when: true
   retries: 3
   delay: 10
   until: kubernetes_cilium_image_copy.rc == 0
-  when: inventory_hostname == kubernetes_registry_node
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - item.status == 404 or kubernetes_registry_images_force_refresh
   tags:
     - cilium_offline
 

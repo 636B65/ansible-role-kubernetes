@@ -29,6 +29,11 @@
   tags:
     - always
 
+- name: Resolve component versions
+  ansible.builtin.import_tasks: versions.yml
+  tags:
+    - always
+
 - name: Add every cluster node name and address to /etc/hosts
   ansible.builtin.blockinfile:
     path: "{{ kubernetes_hosts_file_path }}"
@@ -55,6 +60,28 @@
   tags:
     - cluster
     - prerequisites
+
+- name: Import staged images into containerd for an offline installation
+  ansible.builtin.import_tasks: offline_images.yml
+  when: kubernetes_offline_mode
+  tags:
+    - cluster
+    - prerequisites
+    - offline
+
+- name: Configure the host firewall
+  ansible.builtin.import_tasks: firewall.yml
+  tags:
+    - cluster
+    - firewall
+
+- name: Prepare API server hardening files on controllers
+  ansible.builtin.import_tasks: hardening.yml
+  when: kubernetes_hardening_enabled
+  tags:
+    - cluster
+    - bootstrap
+    - hardening
 
 - name: Configure controller load balancers
   ansible.builtin.import_tasks: loadbalancer.yml
@@ -88,6 +115,13 @@
     - cluster
     - loadbalancer
 
+- name: Create join credentials for nodes that are not in the cluster yet
+  ansible.builtin.import_tasks: join_credentials.yml
+  tags:
+    - cluster
+    - bootstrap
+    - join
+
 - name: Join control-plane nodes
   ansible.builtin.import_tasks: join_control_plane.yml
   when:
@@ -103,6 +137,15 @@
   tags:
     - cluster
     - join
+
+- name: Schedule etcd backups on controllers
+  ansible.builtin.import_tasks: etcd_backup.yml
+  when:
+    - kubernetes_etcd_backup_enabled
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+  tags:
+    - cluster
+    - etcd_backup
 
 - name: Install Longhorn replicated storage for the registry
   ansible.builtin.import_tasks: longhorn.yml
@@ -135,3 +178,26 @@
     - registry
     - registry_images
     - cilium_offline
+
+- name: Install metrics-server, Hubble, and optional monitoring
+  ansible.builtin.import_tasks: observability.yml
+  tags:
+    - observability
+
+- name: Stage an offline installation bundle
+  ansible.builtin.import_tasks: offline_stage.yml
+  tags:
+    - offline_stage
+    - never
+
+- name: Upgrade Kubernetes one node at a time
+  ansible.builtin.import_tasks: upgrade.yml
+  tags:
+    - upgrade
+    - never
+
+- name: Remove nodes from the cluster
+  ansible.builtin.import_tasks: remove_node.yml
+  tags:
+    - remove_node
+    - never

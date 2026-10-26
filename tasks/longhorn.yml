@@ -33,49 +33,27 @@
   tags:
     - longhorn
 
-- name: Resolve the latest stable Longhorn release
-  ansible.builtin.uri:
-    url: https://api.github.com/repos/longhorn/longhorn/releases/latest
-    return_content: true
-    headers:
-      Accept: application/vnd.github+json
-    timeout: 30
-  register: kubernetes_longhorn_latest_release
-  when:
-    - inventory_hostname == kubernetes_registry_node
-    - kubernetes_longhorn_version == "latest"
-  tags:
-    - longhorn
-
-- name: Set the Longhorn version for installation
-  ansible.builtin.set_fact:
-    kubernetes_longhorn_resolved_version: >-
-      {{
-        (kubernetes_longhorn_latest_release.json.tag_name
-        if kubernetes_longhorn_version == 'latest'
-        else kubernetes_longhorn_version)
-        | regex_replace('^v', '')
-      }}
-  when: inventory_hostname == kubernetes_registry_node
-  tags:
-    - longhorn
-
-- name: Validate the selected Longhorn version
-  ansible.builtin.assert:
-    that:
-      - kubernetes_longhorn_resolved_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
-  when: inventory_hostname == kubernetes_registry_node
-  tags:
-    - longhorn
-
-- name: Download the official Longhorn installation manifest
-  ansible.builtin.get_url:
-    url: "https://raw.githubusercontent.com/longhorn/longhorn/v{{ kubernetes_longhorn_resolved_version }}/deploy/longhorn.yaml"
-    dest: /tmp/longhorn-installation.yaml
+- name: Create the manifest directory for Longhorn
+  ansible.builtin.file:
+    path: "{{ kubernetes_offline_manifests_directory }}"
+    state: directory
     owner: root
     group: root
-    mode: "0600"
+    mode: "0755"
   when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
+- name: Download the pinned Longhorn installation manifest
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/longhorn/longhorn/v{{ kubernetes_longhorn_resolved_version }}/deploy/longhorn.yaml"
+    dest: "{{ kubernetes_longhorn_manifest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - not kubernetes_offline_mode
   tags:
     - longhorn
 
@@ -85,7 +63,7 @@
       - kubectl
       - apply
       - -f
-      - /tmp/longhorn-installation.yaml
+      - "{{ kubernetes_longhorn_manifest }}"
   register: kubernetes_longhorn_install
   changed_when: >-
     'created' in kubernetes_longhorn_install.stdout

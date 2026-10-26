@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Kubernetes node host firewall
+Documentation=file://{{ kubernetes_firewall_rules_file }}
+Wants=network-pre.target
+Before=network-pre.target kubelet.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f {{ kubernetes_firewall_rules_file }}
+ExecReload=/usr/sbin/nft -f {{ kubernetes_firewall_rules_file }}
+ExecStop=/usr/sbin/nft delete table inet kubernetes_host_firewall
+
+[Install]
+WantedBy=multi-user.target

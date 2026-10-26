@@ -333,6 +333,7 @@
     owner: root
     group: root
     mode: "0600"
+  changed_when: false
   no_log: true
   when: inventory_hostname == kubernetes_registry_node
   tags:
@@ -358,6 +359,7 @@
   ansible.builtin.file:
     path: /tmp/kubernetes-registry-http-secret.yml
     state: absent
+  changed_when: false
   when: inventory_hostname == kubernetes_registry_node
   tags:
     - registry_deploy

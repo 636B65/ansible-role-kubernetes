@@ -1,0 +1,16 @@
+---
+# Upgrade the cluster to the pinned kubernetes_version, one node at a time:
+#   ansible-playbook -i examples/inventory.yml examples/upgrade.yml --ask-vault-pass
+# Set kubernetes_version to the next patch or minor release before running it.
+- name: Upgrade Kubernetes one node at a time
+  hosts: k8s_control_plane:k8s_workers
+  become: true
+  any_errors_fatal: true
+  gather_facts: true
+  serial: 1
+  order: inventory
+  tasks:
+    - name: Upgrade this node
+      ansible.builtin.import_role:
+        name: ansible-role-kubernetes
+        tasks_from: upgrade

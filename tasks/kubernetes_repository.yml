@@ -1,0 +1,64 @@
+---
+- name: Ensure apt keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: not kubernetes_offline_mode
+
+- name: Add Kubernetes package signing key
+  ansible.builtin.get_url:
+    url: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_repository_target_minor }}/deb/Release.key"
+    dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
+    owner: root
+    group: root
+    mode: "0644"
+  when: not kubernetes_offline_mode
+
+- name: Configure the Kubernetes package repository for the target minor release
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/kubernetes.list
+    content: >
+      deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.asc]
+      https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_repository_target_minor }}/deb/ /
+    owner: root
+    group: root
+    mode: "0644"
+  register: kubernetes_package_repository
+  when: not kubernetes_offline_mode
+
+- name: Require the staged offline package repository
+  ansible.builtin.stat:
+    path: "{{ kubernetes_offline_debs_directory }}/Packages"
+  register: kubernetes_offline_packages_index
+  when: kubernetes_offline_mode
+
+- name: Validate the staged offline package repository
+  ansible.builtin.assert:
+    that:
+      - kubernetes_offline_packages_index.stat.exists
+    fail_msg: >-
+      Offline mode needs the staged package repository at
+      {{ kubernetes_offline_debs_directory }}. Stage it with the offline_stage
+      tag on an online cluster and copy the bundle to this host.
+  when: kubernetes_offline_mode
+
+- name: Configure the staged offline package repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/kubernetes-offline.list
+    content: |
+      deb [trusted=yes] file:{{ kubernetes_offline_debs_directory }} ./
+    owner: root
+    group: root
+    mode: "0644"
+  register: kubernetes_offline_package_repository
+  when: kubernetes_offline_mode
+
+- name: Refresh the package cache after repository changes
+  ansible.builtin.apt:
+    update_cache: true
+  when: >-
+    kubernetes_package_repository.changed | default(false)
+    or kubernetes_offline_package_repository.changed | default(false)

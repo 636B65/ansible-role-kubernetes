@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+apiVersion: apiserver.config.k8s.io/v1
+kind: AdmissionConfiguration
+plugins:
+  - name: PodSecurity
+    configuration:
+      apiVersion: pod-security.admission.config.k8s.io/v1
+      kind: PodSecurityConfiguration
+      defaults:
+        enforce: {{ kubernetes_pod_security_enforce | to_json }}
+        enforce-version: latest
+        audit: {{ kubernetes_pod_security_audit | to_json }}
+        audit-version: latest
+        warn: {{ kubernetes_pod_security_warn | to_json }}
+        warn-version: latest
+      exemptions:
+        usernames: []
+        runtimeClasses: []
+        namespaces: {{ kubernetes_pod_security_exempt_namespaces | unique | list | to_json }}

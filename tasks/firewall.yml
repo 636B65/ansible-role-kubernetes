@@ -1,0 +1,79 @@
+---
+- name: Install nftables for the host firewall
+  ansible.builtin.apt:
+    name: nftables
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: kubernetes_firewall_enabled
+
+- name: Validate the firewall networks
+  ansible.builtin.assert:
+    that:
+      - >-
+        (kubernetes_firewall_admin_networks + kubernetes_firewall_api_networks
+        + kubernetes_firewall_nodeport_networks)
+        | reject('match', '^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$')
+        | list | length == 0
+      - kubernetes_firewall_admin_networks | length > 0
+    fail_msg: >-
+      The firewall network lists accept IPv4 addresses and CIDRs only, and
+      kubernetes_firewall_admin_networks needs at least one entry so SSH stays
+      reachable.
+  run_once: true
+  when: kubernetes_firewall_enabled
+
+- name: Render the host firewall rules
+  ansible.builtin.template:
+    src: kubernetes-firewall.nft.j2
+    dest: "{{ kubernetes_firewall_rules_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+    validate: nft -c -f %s
+  notify: Reload Kubernetes host firewall
+  when: kubernetes_firewall_enabled
+
+- name: Install the host firewall service
+  ansible.builtin.template:
+    src: kubernetes-firewall.service.j2
+    dest: "/etc/systemd/system/{{ kubernetes_firewall_service }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: kubernetes_firewall_unit
+  when: kubernetes_firewall_enabled
+
+- name: Enable and start the host firewall
+  ansible.builtin.systemd:
+    name: "{{ kubernetes_firewall_service }}"
+    state: started
+    enabled: true
+    daemon_reload: "{{ kubernetes_firewall_unit.changed }}"
+  when: kubernetes_firewall_enabled
+
+- name: Check for a previously installed host firewall
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ kubernetes_firewall_service }}"
+  register: kubernetes_firewall_existing_unit
+  when: not kubernetes_firewall_enabled
+
+- name: Stop and disable a previously installed host firewall
+  ansible.builtin.systemd:
+    name: "{{ kubernetes_firewall_service }}"
+    state: stopped
+    enabled: false
+  when:
+    - not kubernetes_firewall_enabled
+    - kubernetes_firewall_existing_unit.stat.exists
+
+- name: Remove a previously installed host firewall
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "/etc/systemd/system/{{ kubernetes_firewall_service }}"
+    - "{{ kubernetes_firewall_rules_file }}"
+  when:
+    - not kubernetes_firewall_enabled
+    - kubernetes_firewall_existing_unit.stat.exists

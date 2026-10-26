@@ -1,0 +1,17 @@
+---
+# Drain and remove nodes, one at a time:
+#   ansible-playbook -i examples/inventory.yml examples/remove-node.yml \
+#     -e '{"kubernetes_remove_nodes": ["kube-wl03"]}' --ask-vault-pass
+# Afterwards remove the hosts from the inventory and run examples/site.yml.
+- name: Remove nodes from the Kubernetes cluster
+  hosts: k8s_control_plane:k8s_workers
+  become: true
+  any_errors_fatal: true
+  gather_facts: true
+  serial: 1
+  order: inventory
+  tasks:
+    - name: Remove the selected nodes
+      ansible.builtin.import_role:
+        name: ansible-role-kubernetes
+        tasks_from: remove_node

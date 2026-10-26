@@ -1,0 +1,59 @@
+# {{ ansible_managed }}
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - RequestReceived
+rules:
+  # High-volume, low-value requests.
+  - level: None
+    nonResourceURLs:
+      - /healthz*
+      - /livez*
+      - /readyz*
+      - /version
+      - /metrics
+  - level: None
+    users:
+      - system:kube-proxy
+    verbs:
+      - watch
+  - level: None
+    userGroups:
+      - system:nodes
+    verbs:
+      - get
+      - patch
+      - update
+    resources:
+      - group: ""
+        resources:
+          - nodes
+          - nodes/status
+  - level: None
+    resources:
+      - group: ""
+        resources:
+          - events
+      - group: coordination.k8s.io
+        resources:
+          - leases
+  # Never record Secret, ConfigMap, or token payloads.
+  - level: Metadata
+    resources:
+      - group: ""
+        resources:
+          - secrets
+          - configmaps
+          - serviceaccounts/token
+      - group: authentication.k8s.io
+        resources:
+          - tokenreviews
+  # Record request bodies for changes, metadata for reads.
+  - level: Request
+    verbs:
+      - create
+      - update
+      - patch
+      - delete
+      - deletecollection
+  - level: Metadata

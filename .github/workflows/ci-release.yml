@@ -26,7 +26,10 @@ jobs:
           python-version: "3.12"
 
       - name: Install Ansible and lint tools
-        run: python -m pip install --upgrade ansible-core ansible-lint
+        run: python -m pip install --upgrade ansible-core ansible-lint shellcheck-py
+
+      - name: Install nftables for firewall rule validation
+        run: sudo apt-get update && sudo apt-get install --yes nftables
 
       - name: Set up local role path
         env:
@@ -50,6 +53,20 @@ jobs:
           ansible-playbook \
             -i tests/inventory.yml \
             tests/render.yml
+          for playbook in examples/site.yml examples/upgrade.yml examples/remove-node.yml; do
+            ansible-playbook --syntax-check -i examples/inventory.yml "$playbook"
+          done
+
+      - name: Render and verify operational templates
+        env:
+          ANSIBLE_ROLES_PATH: ${{ runner.temp }}/ansible-roles
+        run: |
+          ansible-playbook -i tests/inventory.yml tests/operations.yml
+          output="$RUNNER_TEMP/kubernetes-role-operations"
+          sudo nft --check --file "$output/kubernetes-firewall.nft"
+          shellcheck "$output/kubernetes-etcd-backup.sh" \
+            "$output/kubernetes-offline-stage-debs.sh" \
+            tests/idempotence.sh
 
   release:
     name: Publish GitHub Release

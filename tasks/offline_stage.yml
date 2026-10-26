@@ -1,0 +1,175 @@
+---
+- name: Refuse to stage a bundle while running in offline mode
+  ansible.builtin.assert:
+    that:
+      - not kubernetes_offline_mode
+    fail_msg: Stage the offline bundle on a cluster with internet access.
+  run_once: true
+
+- name: Install the tools used to stage the offline bundle
+  ansible.builtin.apt:
+    name:
+      - apt-utils
+      - skopeo
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create the offline bundle directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ kubernetes_offline_debs_directory }}"
+    - "{{ kubernetes_offline_images_directory }}"
+    - "{{ kubernetes_offline_manifests_directory }}"
+
+- name: Install the offline package staging script
+  ansible.builtin.template:
+    src: kubernetes-offline-stage-debs.sh.j2
+    dest: /usr/local/sbin/kubernetes-offline-stage-debs
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Stage the Debian packages and their dependencies
+  ansible.builtin.command:
+    cmd: /usr/local/sbin/kubernetes-offline-stage-debs
+  changed_when: true
+
+- name: Stage the pinned Longhorn and metrics-server manifests
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - url: "https://raw.githubusercontent.com/longhorn/longhorn/v{{ kubernetes_longhorn_resolved_version }}/deploy/longhorn.yaml"
+      dest: "{{ kubernetes_longhorn_manifest }}"
+    - url: "https://raw.githubusercontent.com/longhorn/longhorn/v{{ kubernetes_longhorn_resolved_version }}/deploy/longhorn-images.txt"
+      dest: "{{ kubernetes_longhorn_images_list }}"
+    - url: >-
+        https://github.com/kubernetes-sigs/metrics-server/releases/download/{{
+        kubernetes_metrics_server_resolved_version }}/components.yaml
+      dest: "{{ kubernetes_metrics_server_manifest }}"
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: List the control-plane images for the pinned Kubernetes release
+  ansible.builtin.command:
+    argv:
+      - kubeadm
+      - config
+      - images
+      - list
+      - --kubernetes-version
+      - "v{{ kubernetes_resolved_version }}"
+  register: kubernetes_offline_kubeadm_images
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ kubernetes_first_controller }}"
+
+- name: List the images used by running pods
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - get
+      - pods
+      - --all-namespaces
+      - --output
+      - >-
+        jsonpath={range .items[*]}{range .spec.initContainers[*]}{.image}{"\n"}{end}{range .spec.containers[*]}{.image}{"\n"}{end}{end}
+  register: kubernetes_offline_pod_images
+  changed_when: false
+  run_once: true
+  delegate_to: "{{ kubernetes_first_controller }}"
+
+- name: Read the containerd configuration for its sandbox image
+  ansible.builtin.slurp:
+    src: /etc/containerd/config.toml
+  register: kubernetes_offline_containerd_config
+  run_once: true
+  delegate_to: "{{ kubernetes_first_controller }}"
+
+- name: Read the Longhorn image list
+  ansible.builtin.slurp:
+    src: "{{ kubernetes_longhorn_images_list }}"
+  register: kubernetes_offline_longhorn_images
+  run_once: true
+  delegate_to: "{{ kubernetes_first_controller }}"
+
+- name: Collect every image reference for the offline bundle
+  ansible.builtin.set_fact:
+    kubernetes_offline_raw_images: >-
+      {{
+        (
+          kubernetes_offline_kubeadm_images.stdout_lines
+          + kubernetes_offline_pod_images.stdout_lines
+          + (
+            kubernetes_offline_containerd_config.content | b64decode
+            | regex_findall('(?m)^\s*sandbox(?:_image)?\s*=\s*["\']([^"\']+)["\']')
+          )
+          + (kubernetes_offline_longhorn_images.content | b64decode).splitlines()
+          + (kubernetes_registry_images | map(attribute='source') | list)
+          + [kubernetes_registry_image]
+          + kubernetes_offline_extra_images
+        )
+        | map('trim')
+        | reject('equalto', '')
+        | unique
+        | list
+      }}
+  run_once: true
+
+- name: Normalize the offline image references
+  ansible.builtin.set_fact:
+    kubernetes_offline_images: "{{ (kubernetes_offline_images | default([]) + [kubernetes_image_ref_qualified]) | unique }}"
+  vars:
+    kubernetes_image_ref: "{{ item }}"
+  loop: "{{ kubernetes_offline_raw_images }}"
+
+- name: Save the images as archives for this node architecture
+  ansible.builtin.shell:
+    cmd: >-
+      rm -f {{ (kubernetes_image_archive ~ '.part') | quote }}
+      && skopeo copy --retry-times 3 --override-arch {{ kubernetes_architecture | quote }}
+      {{ ('docker://' ~ item) | quote }}
+      {{ ('docker-archive:' ~ kubernetes_image_archive ~ '.part:' ~ item) | quote }}
+      && mv {{ (kubernetes_image_archive ~ '.part') | quote }} {{ kubernetes_image_archive | quote }}
+    creates: "{{ kubernetes_image_archive }}"
+  vars:
+    kubernetes_image_ref: "{{ item }}"
+  loop: "{{ kubernetes_offline_images }}"
+  register: kubernetes_offline_image_archives
+  retries: 3
+  delay: 10
+  until: kubernetes_offline_image_archives.rc == 0
+
+- name: Record the staged images and component versions
+  ansible.builtin.copy:
+    dest: "{{ item.dest }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - dest: "{{ kubernetes_offline_images_list }}"
+      content: "{{ kubernetes_offline_images | join('\n') }}\n"
+    - dest: "{{ kubernetes_offline_assets_directory }}/VERSIONS"
+      content: |
+        kubernetes_version: "{{ kubernetes_resolved_version }}"
+        kubernetes_cilium_version: "{{ kubernetes_cilium_resolved_version }}"
+        kubernetes_cilium_cli_version: "{{ kubernetes_cilium_cli_resolved_version }}"
+        kubernetes_helm_version: "{{ kubernetes_helm_resolved_version }}"
+        kubernetes_longhorn_version: "{{ kubernetes_longhorn_resolved_version }}"
+        kubernetes_metrics_server_version: "{{ kubernetes_metrics_server_resolved_version }}"
+        architecture: "{{ kubernetes_architecture }}"
+        distribution: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
+  loop_control:
+    label: "{{ item.dest }}"

@@ -55,73 +55,100 @@
   tags:
     - prerequisites
 
-- name: Read the latest stable Kubernetes release
-  ansible.builtin.uri:
-    url: https://dl.k8s.io/release/stable.txt
-    return_content: true
-    timeout: 30
-  register: kubernetes_stable_release
+- name: Read installed package versions
+  ansible.builtin.package_facts:
+    manager: apt
   tags:
     - prerequisites
 
-- name: Set Kubernetes package repository version
+- name: Select the Kubernetes version for new packages
   ansible.builtin.set_fact:
-    kubernetes_release: "{{ kubernetes_stable_release.content | trim }}"
-    kubernetes_repository_minor: "{{ kubernetes_stable_release.content | trim | regex_search('^v[0-9]+\\.[0-9]+') }}"
+    # Nodes that join an existing cluster get the release its first controller
+    # runs, because a kubelet must never be newer than the API server. New
+    # clusters get the pinned release; the upgrade flow moves both forward.
+    kubernetes_install_version: >-
+      {{
+        (hostvars[kubernetes_first_controller].ansible_facts.packages.kubeadm[0].version
+        | regex_replace('-.*$', ''))
+        if 'kubeadm' in hostvars[kubernetes_first_controller].ansible_facts.packages | default({})
+        else kubernetes_resolved_version
+      }}
+  tags:
+    - prerequisites
+
+- name: Configure the staged offline package repository first
+  ansible.builtin.import_tasks: kubernetes_repository.yml
+  vars:
+    kubernetes_repository_target_minor: "{{ kubernetes_install_version | regex_search('^[0-9]+\\.[0-9]+') }}"
+  when: kubernetes_offline_mode
   tags:
     - prerequisites
 
 - name: Install containerd and required utilities
-  ansible.builtin.apt: # noqa: package-latest
+  ansible.builtin.apt:
     name:
       - "{{ containerd_package }}"
       - apt-transport-https
       - ca-certificates
       - curl
       - gpg
-    state: latest
+    state: present
     update_cache: true
     cache_valid_time: 3600
   tags:
     - prerequisites
 
-- name: Ensure apt keyrings directory exists
-  ansible.builtin.file:
-    path: /etc/apt/keyrings
-    state: directory
-    owner: root
-    group: root
-    mode: "0755"
+- name: Configure the Kubernetes package repository
+  ansible.builtin.import_tasks: kubernetes_repository.yml
+  vars:
+    kubernetes_repository_target_minor: "{{ kubernetes_install_version | regex_search('^[0-9]+\\.[0-9]+') }}"
+  when: not kubernetes_offline_mode
   tags:
     - prerequisites
 
-- name: Add Kubernetes package signing key
-  ansible.builtin.get_url:
-    url: "https://pkgs.k8s.io/core:/stable:/{{ kubernetes_repository_minor }}/deb/Release.key"
-    dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
-    owner: root
-    group: root
-    mode: "0644"
-  tags:
-    - prerequisites
-
-- name: Configure Kubernetes package repository
-  ansible.builtin.apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.asc] https://pkgs.k8s.io/core:/stable:/{{ kubernetes_repository_minor }}/deb/ /"
-    filename: kubernetes
+- name: Install the Kubernetes packages that are missing
+  ansible.builtin.apt:
+    name: >-
+      {{
+        ['kubelet', 'kubeadm', 'kubectl']
+        | reject('in', ansible_facts.packages)
+        | map('regex_replace', '$', '=' ~ kubernetes_install_version ~ '-*')
+        | list
+      }}
     state: present
+    allow_change_held_packages: true
     update_cache: true
+    cache_valid_time: 3600
+  when: >-
+    ['kubelet', 'kubeadm', 'kubectl']
+    | reject('in', ansible_facts.packages)
+    | list
+    | length > 0
   tags:
     - prerequisites
 
-- name: Install latest Kubernetes packages
-  ansible.builtin.apt: # noqa: package-latest
-    name:
-      - kubelet
-      - kubeadm
-      - kubectl
-    state: latest
-    update_cache: true
+- name: Report Kubernetes packages that differ from the pinned version
+  ansible.builtin.debug:
+    msg: >-
+      {{ item }} {{ ansible_facts.packages[item][0].version }} is installed but
+      kubernetes_version is {{ kubernetes_resolved_version }}. The role leaves
+      installed Kubernetes packages unchanged; run the upgrade playbook to move
+      the cluster to the pinned version.
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+  when:
+    - item in ansible_facts.packages
+    - not ansible_facts.packages[item][0].version.startswith(kubernetes_resolved_version ~ '-')
+  tags:
+    - prerequisites
+
+- name: Hold Kubernetes packages so apt cannot upgrade them unplanned
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: "{{ kubernetes_held_packages }}"
   tags:
     - prerequisites
 

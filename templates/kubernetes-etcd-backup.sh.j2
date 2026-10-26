@@ -1,0 +1,55 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# Save an etcd snapshot from the local kubeadm etcd member, together with the
+# cluster PKI and the API server hardening files needed to restore it.
+set -euo pipefail
+umask 077
+
+backup_directory={{ kubernetes_etcd_backup_directory | quote }}
+retention_days={{ kubernetes_etcd_backup_retention_days | int }}
+runtime_endpoint={{ kubernetes_cri_socket | quote }}
+timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+host="$(hostname -s)"
+partial_name=".kubernetes-etcd-backup.db.part"
+
+mkdir -p "${backup_directory}"
+
+container="$(crictl --runtime-endpoint "${runtime_endpoint}" ps --name '^etcd$' --state Running --quiet | head -n 1)"
+if [ -z "${container}" ]; then
+    echo "No running etcd container was found on ${host}." >&2
+    exit 1
+fi
+
+# The etcd static pod mounts /var/lib/etcd from the host, so the snapshot is
+# written there by etcdctl inside the container and then moved on the host.
+rm -f "/var/lib/etcd/${partial_name}"
+crictl --runtime-endpoint "${runtime_endpoint}" exec "${container}" \
+    etcdctl \
+    --endpoints=https://127.0.0.1:2379 \
+    --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+    --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \
+    --key=/etc/kubernetes/pki/etcd/healthcheck-client.key \
+    snapshot save "/var/lib/etcd/${partial_name}"
+
+if [ ! -s "/var/lib/etcd/${partial_name}" ]; then
+    echo "etcdctl did not write a snapshot on ${host}." >&2
+    exit 1
+fi
+
+snapshot="${backup_directory}/etcd-snapshot-${host}-${timestamp}.db"
+mv "/var/lib/etcd/${partial_name}" "${snapshot}"
+
+hardening_directory={{ kubernetes_hardening_directory | quote }}
+configuration_paths=(--directory /etc/kubernetes pki)
+if [ -d "${hardening_directory}" ]; then
+    configuration_paths+=(--directory / "${hardening_directory#/}")
+fi
+tar --create --gzip \
+    --file "${backup_directory}/kubernetes-config-${host}-${timestamp}.tar.gz" \
+    "${configuration_paths[@]}"
+
+find "${backup_directory}" -maxdepth 1 -type f \
+    \( -name 'etcd-snapshot-*.db' -o -name 'kubernetes-config-*.tar.gz' \) \
+    -mtime "+${retention_days}" -delete
+
+echo "Saved ${snapshot}"

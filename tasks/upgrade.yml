@@ -1,0 +1,357 @@
+---
+# Rolling Kubernetes upgrade. Run with examples/upgrade.yml, which processes
+# one node at a time (serial: 1), first controllers and then workers.
+- name: Require a rolling upgrade with one node per batch
+  ansible.builtin.assert:
+    that:
+      - ansible_play_batch | length == 1
+    fail_msg: >-
+      Upgrade one node at a time. Use examples/upgrade.yml or set serial: 1 in
+      the play that runs the upgrade tasks.
+  run_once: true
+
+- name: Resolve the target component versions
+  ansible.builtin.import_tasks: versions.yml
+
+- name: Read the API server version
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - version
+      - --output
+      - json
+  register: kubernetes_upgrade_server_version
+  changed_when: false
+  delegate_to: "{{ kubernetes_first_controller }}"
+
+- name: Read the kubelet version of this node
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - get
+      - node
+      - "{{ inventory_hostname }}"
+      - --output
+      - jsonpath={.status.nodeInfo.kubeletVersion}
+  register: kubernetes_upgrade_kubelet_version
+  changed_when: false
+  delegate_to: "{{ kubernetes_first_controller }}"
+
+- name: Set the upgrade versions
+  ansible.builtin.set_fact:
+    kubernetes_upgrade_target: "{{ kubernetes_resolved_version }}"
+    kubernetes_upgrade_cluster_version: >-
+      {{ (kubernetes_upgrade_server_version.stdout | from_json).serverVersion.gitVersion | regex_replace('^v', '') }}
+    kubernetes_upgrade_node_version: "{{ kubernetes_upgrade_kubelet_version.stdout | regex_replace('^v', '') }}"
+
+- name: Validate the upgrade path
+  ansible.builtin.assert:
+    that:
+      - kubernetes_upgrade_target is version(kubernetes_upgrade_cluster_version, '>=')
+      - >-
+        (kubernetes_upgrade_target.split('.')[1] | int)
+        - (kubernetes_upgrade_cluster_version.split('.')[1] | int) <= 1
+      - kubernetes_upgrade_target.split('.')[0] == kubernetes_upgrade_cluster_version.split('.')[0]
+    fail_msg: >-
+      Cannot upgrade from {{ kubernetes_upgrade_cluster_version }} to
+      {{ kubernetes_upgrade_target }}. kubeadm upgrades one minor release at a
+      time and never downgrades; set kubernetes_version to the next minor
+      release first.
+
+- name: Require the first controller to be upgraded before the other nodes
+  ansible.builtin.assert:
+    that:
+      - kubernetes_upgrade_cluster_version == kubernetes_upgrade_target
+    fail_msg: >-
+      The control plane still runs {{ kubernetes_upgrade_cluster_version }}.
+      Upgrade {{ kubernetes_first_controller }} first; examples/upgrade.yml
+      orders the hosts correctly.
+  when: inventory_hostname != kubernetes_first_controller
+
+- name: Prepare the API server hardening files
+  ansible.builtin.import_tasks: hardening.yml
+  when: kubernetes_hardening_enabled
+
+- name: Read the kubeadm cluster configuration
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - get
+      - configmap
+      - kubeadm-config
+      - --namespace
+      - kube-system
+      - --output
+      - jsonpath={.data.ClusterConfiguration}
+  register: kubernetes_upgrade_cluster_configuration
+  changed_when: false
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_apiserver_hardening_args | length > 0
+
+- name: Parse the kubeadm cluster configuration
+  ansible.builtin.set_fact:
+    kubernetes_upgrade_cluster_configuration_current: "{{ kubernetes_upgrade_cluster_configuration.stdout | from_yaml }}"
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_apiserver_hardening_args | length > 0
+
+- name: Require a kubeadm v1beta4 cluster configuration
+  ansible.builtin.assert:
+    that:
+      - kubernetes_upgrade_cluster_configuration_current.apiVersion == 'kubeadm.k8s.io/v1beta4'
+    fail_msg: >-
+      The kubeadm-config ConfigMap uses
+      {{ kubernetes_upgrade_cluster_configuration_current.apiVersion }}. Upgrade
+      the cluster to a Kubernetes release that stores v1beta4 before rolling out
+      the hardening settings.
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_apiserver_hardening_args | length > 0
+
+- name: Build the hardened kubeadm cluster configuration
+  ansible.builtin.set_fact:
+    kubernetes_upgrade_cluster_configuration_desired: "{{ kubernetes_upgrade_cluster_configuration_merged }}"
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_apiserver_hardening_args | length > 0
+
+- name: Store the hardened kubeadm cluster configuration
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - patch
+      - configmap
+      - kubeadm-config
+      - --namespace
+      - kube-system
+      - --type=merge
+      - --patch
+      - "{{ {'data': {'ClusterConfiguration': kubernetes_upgrade_cluster_configuration_desired | to_nice_yaml(indent=2)}} | to_json }}"
+  changed_when: true
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_apiserver_hardening_args | length > 0
+    - kubernetes_upgrade_cluster_configuration_desired != kubernetes_upgrade_cluster_configuration_current
+
+- name: Read the API server static pod manifest
+  ansible.builtin.slurp:
+    src: /etc/kubernetes/manifests/kube-apiserver.yaml
+  register: kubernetes_upgrade_apiserver_manifest
+  when: inventory_hostname in groups[kubernetes_control_plane_group]
+
+- name: Decide whether this node needs an upgrade
+  ansible.builtin.set_fact:
+    kubernetes_upgrade_apiserver_reconfigure: >-
+      {{
+        inventory_hostname in groups[kubernetes_control_plane_group]
+        and (
+          kubernetes_apiserver_hardening_flags
+          | reject('in', (kubernetes_upgrade_apiserver_manifest.content | b64decode | from_yaml).spec.containers[0].command)
+          | list
+          | length > 0
+        )
+      }}
+    kubernetes_upgrade_node_needed: >-
+      {{
+        kubernetes_upgrade_node_version != kubernetes_upgrade_target
+        or (
+          inventory_hostname == kubernetes_first_controller
+          and kubernetes_upgrade_cluster_version != kubernetes_upgrade_target
+        )
+      }}
+
+- name: Report the planned upgrade
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: kubelet {{ kubernetes_upgrade_node_version }},
+      control plane {{ kubernetes_upgrade_cluster_version }}, target
+      {{ kubernetes_upgrade_target }}{{
+      ', API server reconfiguration pending' if kubernetes_upgrade_apiserver_reconfigure else '' }}.
+      {{ 'Upgrading.' if kubernetes_upgrade_node_needed or kubernetes_upgrade_apiserver_reconfigure
+      else 'Nothing to do.' }}
+
+- name: Upgrade this node
+  when: kubernetes_upgrade_node_needed or kubernetes_upgrade_apiserver_reconfigure
+  block:
+    - name: Back up etcd before changing the control plane
+      ansible.builtin.systemd:
+        name: "{{ kubernetes_etcd_backup_service }}"
+        state: started
+      when:
+        - inventory_hostname in groups[kubernetes_control_plane_group]
+        - kubernetes_etcd_backup_enabled
+
+    - name: Configure the Kubernetes package repository for the target release
+      ansible.builtin.import_tasks: kubernetes_repository.yml
+      vars:
+        kubernetes_repository_target_minor: "{{ kubernetes_resolved_minor }}"
+
+    - name: Upgrade kubeadm
+      ansible.builtin.apt:
+        name: "kubeadm={{ kubernetes_upgrade_target }}-*"
+        state: present
+        allow_change_held_packages: true
+        allow_downgrade: false
+        update_cache: true
+
+    - name: Hold kubeadm at the upgraded version
+      ansible.builtin.dpkg_selections:
+        name: kubeadm
+        selection: hold
+
+    - name: Upgrade the cluster control plane from the first controller
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - upgrade
+          - apply
+          - --yes
+          - "v{{ kubernetes_upgrade_target }}"
+      changed_when: true
+      when: inventory_hostname == kubernetes_first_controller
+
+    - name: Upgrade the local control plane or kubelet configuration
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - upgrade
+          - node
+      changed_when: true
+      when: inventory_hostname != kubernetes_first_controller
+
+    - name: Drain the node before restarting kubelet
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig
+          - "{{ kubernetes_admin_kubeconfig }}"
+          - drain
+          - "{{ inventory_hostname }}"
+          - --ignore-daemonsets
+          - --delete-emptydir-data
+          - --timeout={{ kubernetes_upgrade_drain_timeout }}
+      changed_when: true
+      delegate_to: "{{ kubernetes_first_controller }}"
+      when: kubernetes_upgrade_node_needed
+
+    - name: Upgrade kubelet and kubectl
+      ansible.builtin.apt:
+        name:
+          - "kubelet={{ kubernetes_upgrade_target }}-*"
+          - "kubectl={{ kubernetes_upgrade_target }}-*"
+        state: present
+        allow_change_held_packages: true
+        allow_downgrade: false
+      when: kubernetes_upgrade_node_needed
+
+    - name: Hold the upgraded Kubernetes packages
+      ansible.builtin.dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop: "{{ kubernetes_held_packages }}"
+
+    - name: Restart kubelet with the upgraded version
+      ansible.builtin.systemd:
+        name: kubelet
+        state: restarted
+        daemon_reload: true
+      when: kubernetes_upgrade_node_needed
+
+    - name: Wait for the node to report the target kubelet version
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig
+          - "{{ kubernetes_admin_kubeconfig }}"
+          - get
+          - node
+          - "{{ inventory_hostname }}"
+          - --output
+          - >-
+            jsonpath={.status.nodeInfo.kubeletVersion}
+            {.status.conditions[?(@.type=="Ready")].status}
+      register: kubernetes_upgrade_node_state
+      changed_when: false
+      retries: 60
+      delay: 10
+      until: kubernetes_upgrade_node_state.stdout == 'v' ~ kubernetes_upgrade_target ~ ' True'
+      delegate_to: "{{ kubernetes_first_controller }}"
+
+    - name: Wait for the API server on this controller
+      ansible.builtin.uri:
+        url: "https://127.0.0.1:{{ kubernetes_apiserver_port }}/readyz"
+        validate_certs: false
+        status_code: 200
+      register: kubernetes_upgrade_apiserver_ready
+      retries: 30
+      delay: 10
+      until: kubernetes_upgrade_apiserver_ready.status == 200
+      when: inventory_hostname in groups[kubernetes_control_plane_group]
+
+    - name: Return the node to service
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig
+          - "{{ kubernetes_admin_kubeconfig }}"
+          - uncordon
+          - "{{ inventory_hostname }}"
+      changed_when: true
+      delegate_to: "{{ kubernetes_first_controller }}"
+      when: kubernetes_upgrade_node_needed
+
+- name: Read the installed Cilium version
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - get
+      - daemonset
+      - cilium
+      - --namespace
+      - kube-system
+      - --output
+      - jsonpath={.spec.template.spec.containers[0].image}
+  register: kubernetes_upgrade_cilium_image
+  changed_when: false
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_upgrade_cilium
+
+- name: Upgrade Cilium to the pinned release
+  ansible.builtin.command:
+    argv:
+      - cilium
+      - upgrade
+      - --version
+      - "{{ kubernetes_cilium_resolved_version }}"
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  changed_when: true
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_upgrade_cilium
+    - (':v' ~ kubernetes_cilium_resolved_version ~ '@') not in (kubernetes_upgrade_cilium_image.stdout ~ '@')
+
+- name: Wait for Cilium after the upgrade
+  ansible.builtin.command:
+    argv:
+      - cilium
+      - status
+      - --wait
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  changed_when: false
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_upgrade_cilium

@@ -1,0 +1,47 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# Download the packages the role installs, with their full dependency closure,
+# into a flat apt repository for offline installations.
+set -euo pipefail
+
+target={{ kubernetes_offline_debs_directory | quote }}
+packages=(
+{% for package in kubernetes_offline_packages %}
+    {{ package | quote }}
+{% endfor %}
+)
+pinned_packages=(
+{% for package in ['kubelet', 'kubeadm', 'kubectl'] %}
+    {{ package | quote }}
+{% endfor %}
+)
+
+mkdir -p "${target}"
+cd "${target}"
+rm -f ./*.deb Packages Packages.gz
+
+apt-get update -qq
+
+mapfile -t closure < <(
+    apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts \
+        --no-breaks --no-replaces --no-enhances "${packages[@]}" \
+        | grep '^[a-zA-Z0-9]' | sort -u
+)
+
+for package in "${closure[@]}"; do
+    if ! apt-get download "${package}" >/dev/null 2>&1; then
+        echo "Skipped ${package}: virtual or not downloadable" >&2
+    fi
+done
+
+# Replace the candidate Kubernetes packages with the versions installed on
+# this node, which the role pinned.
+for package in "${pinned_packages[@]}"; do
+    version="$(dpkg-query --show --showformat='${Version}' "${package}")"
+    rm -f "${package}"_*.deb
+    apt-get download "${package}=${version}"
+done
+
+apt-ftparchive packages . > Packages
+gzip -9 --keep --force Packages
+echo "Staged $(find . -maxdepth 1 -name '*.deb' | wc -l) packages in ${target}"

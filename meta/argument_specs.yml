@@ -1,0 +1,547 @@
+---
+argument_specs:
+  main:
+    short_description: Install and operate a highly available Kubernetes cluster.
+    description:
+      - Installs containerd, Kubernetes, Cilium, HAProxy, Keepalived, Longhorn, and an internal registry,
+        plus optional hardening, backups, firewall, and observability.
+    options:
+      kubernetes_control_plane_group:
+        type: str
+        description: Inventory group with the control-plane nodes.
+        default: k8s_control_plane
+      kubernetes_worker_group:
+        type: str
+        description: Inventory group with the worker nodes.
+        default: k8s_workers
+      kubernetes_api_vip:
+        type: str
+        description: Free IPv4 address that Keepalived assigns to the active controller for the Kubernetes
+          API.
+        default: 192.168.1.100
+      kubernetes_api_vip_prefix:
+        type: int
+        description: Prefix length of the API virtual IP.
+        default: 24
+      kubernetes_api_vip_interface:
+        type: str
+        description: Controller network interface that carries the API virtual IP.
+        default: '{{ ansible_default_ipv4.interface }}'
+      kubernetes_api_vip_router_id:
+        type: int
+        description: VRRP virtual router ID used by Keepalived.
+        default: 51
+      kubernetes_keepalived_auth_pass:
+        type: str
+        description: Shared Keepalived VRRP password of at most eight characters.
+        no_log: true
+        default: changeme
+      kubernetes_pod_network_cidr:
+        type: str
+        description: Pod network CIDR.
+        default: 10.244.0.0/16
+      kubernetes_service_cidr:
+        type: str
+        description: Service network CIDR.
+        default: 10.96.0.0/12
+      kubernetes_api_port:
+        type: int
+        description: HAProxy port on the API virtual IP.
+        default: 8443
+      kubernetes_apiserver_port:
+        type: int
+        description: kube-apiserver port on each controller.
+        default: 6443
+      containerd_package:
+        type: str
+        description: Debian package that provides containerd.
+        default: containerd
+      kubernetes_hosts_file_path:
+        type: path
+        description: Hosts file that receives the cluster node names.
+        default: /etc/hosts
+      kubernetes_version:
+        type: str
+        description: Kubernetes release without the leading v, or "latest".
+        default: 1.36.5
+      kubernetes_cilium_version:
+        type: str
+        description: Cilium release without the leading v, or "latest".
+        default: 1.20.4
+      kubernetes_cilium_cli_version:
+        type: str
+        description: Cilium CLI release such as v0.20.1, or "latest".
+        default: v0.20.1
+      kubernetes_helm_version:
+        type: str
+        description: Helm v3 release such as v3.22.1, or "latest".
+        default: v3.22.1
+      kubernetes_longhorn_version:
+        type: str
+        description: Longhorn release without the leading v, or "latest".
+        default: 1.13.0
+      kubernetes_metrics_server_version:
+        type: str
+        description: metrics-server release such as v0.9.0, or "latest".
+        default: v0.9.0
+      kubernetes_prometheus_stack_version:
+        type: str
+        description: kube-prometheus-stack Helm chart version.
+        default: 92.14.0
+      kubernetes_held_packages:
+        type: list
+        description: Packages that apt holds outside the upgrade flow.
+        elements: str
+        default:
+          - kubelet
+          - kubeadm
+          - kubectl
+      kubernetes_registry_namespace:
+        type: str
+        description: Namespace of the internal image registry.
+        default: local-registry
+      kubernetes_registry_image:
+        type: str
+        description: Container image of the internal registry.
+        default: registry:2.8.3
+      kubernetes_registry_hostname:
+        type: str
+        description: Hostname that nodes use for the internal registry.
+        default: registry.k8s.local
+      kubernetes_registry_node_port:
+        type: int
+        description: NodePort of the internal registry.
+        default: 30500
+      kubernetes_registry_storage_path:
+        type: path
+        description: Legacy hostPath registry data directory to migrate from.
+        default: /var/lib/kubernetes-registry
+      kubernetes_registry_node:
+        type: str
+        description: Control-plane node that runs registry and staging tasks.
+        default: '{{ groups[kubernetes_control_plane_group][0] }}'
+      kubernetes_registry_storage_size:
+        type: str
+        description: Size of the replicated registry volume claim.
+        default: 8Gi
+      kubernetes_registry_storage_class:
+        type: str
+        description: Longhorn storage class used by the registry.
+        default: kubernetes-registry-longhorn
+      kubernetes_registry_replicas:
+        type: int
+        description: Number of registry pods.
+        default: 2
+      kubernetes_longhorn_replica_count:
+        type: int
+        description: Longhorn replicas of the registry volume.
+        default: 3
+      kubernetes_registry_images:
+        type: list
+        description: Images copied into the internal registry.
+        elements: dict
+        options:
+          source:
+            type: str
+            description: Fully qualified source image reference.
+            required: true
+          destination:
+            type: str
+            description: Repository and tag in the internal registry.
+            required: true
+        default:
+          - source: docker.io/library/ubuntu:26.04
+            destination: ubuntu:26.04
+          - source: docker.io/library/nginx:1.30.6
+            destination: nginx:1.30.6
+      kubernetes_registry_images_force_refresh:
+        type: bool
+        description: Copy images even when the destination tag exists.
+        default: false
+      kubernetes_offline_assets_directory:
+        type: path
+        description: Directory that holds offline assets and the offline bundle.
+        default: /opt/kubernetes-offline
+      kubernetes_helm_releases_url:
+        type: str
+        description: GitHub API URL used to resolve Helm when kubernetes_helm_version is "latest".
+        default: https://api.github.com/repos/helm/helm/releases?per_page=100
+      kubernetes_offline_mode:
+        type: bool
+        description: Install from the staged offline bundle instead of the internet.
+        default: false
+      kubernetes_offline_extra_images:
+        type: list
+        description: Additional images to stage in the offline bundle.
+        elements: str
+        default: []
+      haproxy_stats_bind_address:
+        type: str
+        description: Bind address of the HAProxy statistics page.
+        default: '*'
+      haproxy_stats_port:
+        type: int
+        description: Port of the HAProxy statistics page.
+        default: 8404
+      haproxy_stats_uri:
+        type: str
+        description: URI of the HAProxy statistics page.
+        default: /stats
+      haproxy_stats_refresh:
+        type: str
+        description: Refresh interval of the HAProxy statistics page.
+        default: 10s
+      kubernetes_hardening_enabled:
+        type: bool
+        description: Manage API server audit logging, Secret encryption, and Pod Security admission.
+        default: true
+      kubernetes_hardening_directory:
+        type: path
+        description: Controller directory for the API server hardening files.
+        default: /etc/kubernetes/hardening
+      kubernetes_audit_log_enabled:
+        type: bool
+        description: Enable API server audit logging.
+        default: true
+      kubernetes_audit_log_directory:
+        type: path
+        description: Directory for API server audit logs.
+        default: /var/log/kubernetes/audit
+      kubernetes_audit_log_maxage:
+        type: int
+        description: Days to keep rotated audit logs.
+        default: 30
+      kubernetes_audit_log_maxbackup:
+        type: int
+        description: Number of rotated audit logs to keep.
+        default: 10
+      kubernetes_audit_log_maxsize:
+        type: int
+        description: Audit log size in MB before rotation.
+        default: 100
+      kubernetes_secrets_encryption_enabled:
+        type: bool
+        description: Encrypt Secrets at rest in etcd.
+        default: true
+      kubernetes_secrets_encryption_stage:
+        type: str
+        description: prepare reads encrypted Secrets only; active also writes them encrypted.
+        choices:
+          - prepare
+          - active
+        default: active
+      kubernetes_secrets_encryption_key:
+        type: str
+        description: Base64-encoded 32-byte Secret encryption key; generated when empty.
+        no_log: true
+        default: ''
+      kubernetes_pod_security_enabled:
+        type: bool
+        description: Configure cluster-wide Pod Security admission defaults.
+        default: true
+      kubernetes_pod_security_enforce:
+        type: str
+        description: Pod Security level that is enforced.
+        choices:
+          - privileged
+          - baseline
+          - restricted
+        default: baseline
+      kubernetes_pod_security_audit:
+        type: str
+        description: Pod Security level that is audited.
+        choices:
+          - privileged
+          - baseline
+          - restricted
+        default: restricted
+      kubernetes_pod_security_warn:
+        type: str
+        description: Pod Security level that triggers warnings.
+        choices:
+          - privileged
+          - baseline
+          - restricted
+        default: restricted
+      kubernetes_pod_security_exempt_namespaces:
+        type: list
+        description: Namespaces exempt from the Pod Security defaults.
+        elements: str
+        default:
+          - kube-system
+          - longhorn-system
+          - '{{ kubernetes_registry_namespace }}'
+          - '{{ kubernetes_prometheus_stack_namespace }}'
+      kubernetes_etcd_backup_enabled:
+        type: bool
+        description: Schedule etcd snapshots on every controller.
+        default: true
+      kubernetes_etcd_backup_directory:
+        type: path
+        description: Directory for etcd snapshots and PKI archives.
+        default: /var/backups/kubernetes-etcd
+      kubernetes_etcd_backup_schedule:
+        type: str
+        description: systemd OnCalendar expression for etcd backups.
+        default: '*-*-* 02:15:00'
+      kubernetes_etcd_backup_retention_days:
+        type: int
+        description: Days to keep etcd backups.
+        default: 7
+      kubernetes_firewall_enabled:
+        type: bool
+        description: Manage the nftables host firewall.
+        default: false
+      kubernetes_firewall_ssh_port:
+        type: int
+        description: SSH port allowed from the admin networks.
+        default: 22
+      kubernetes_firewall_admin_networks:
+        type: list
+        description: IPv4 networks allowed to use SSH and the HAProxy statistics page.
+        elements: str
+        default:
+          - 0.0.0.0/0
+      kubernetes_firewall_api_networks:
+        type: list
+        description: IPv4 networks allowed to reach the Kubernetes API.
+        elements: str
+        default:
+          - 0.0.0.0/0
+      kubernetes_firewall_nodeport_networks:
+        type: list
+        description: IPv4 networks allowed to reach NodePort services.
+        elements: str
+        default:
+          - 0.0.0.0/0
+      kubernetes_firewall_extra_input_rules:
+        type: list
+        description: Additional nftables rules for the input chain.
+        elements: str
+        default: []
+      kubernetes_metrics_server_enabled:
+        type: bool
+        description: Install metrics-server.
+        default: true
+      kubernetes_metrics_server_kubelet_insecure_tls:
+        type: bool
+        description: Skip verification of the kubelet serving certificates in metrics-server.
+        default: true
+      kubernetes_hubble_enabled:
+        type: bool
+        description: Enable Hubble Relay and the Hubble UI in Cilium.
+        default: true
+      kubernetes_prometheus_stack_enabled:
+        type: bool
+        description: Install kube-prometheus-stack.
+        default: false
+      kubernetes_prometheus_stack_namespace:
+        type: str
+        description: Namespace of kube-prometheus-stack.
+        default: monitoring
+      kubernetes_grafana_admin_password:
+        type: str
+        description: Grafana admin password for kube-prometheus-stack.
+        no_log: true
+        default: changeme
+      kubernetes_upgrade_drain_timeout:
+        type: str
+        description: kubectl drain timeout used by the upgrade and removal flows.
+        default: 600s
+      kubernetes_upgrade_cilium:
+        type: bool
+        description: Upgrade Cilium to the pinned release in the upgrade flow.
+        default: false
+      kubernetes_remove_nodes:
+        type: list
+        description: Inventory hosts to remove in the node removal flow.
+        elements: str
+        default: []
+      kubernetes_remove_node_eviction_timeout:
+        type: int
+        description: Seconds to wait for Longhorn to evict replicas from a removed node.
+        default: 1800
+      loginusername:
+        type: str
+        description: SSH user that receives a kubectl configuration on the first controller.
+        required: true
+  upgrade:
+    short_description: Upgrade the cluster to the pinned Kubernetes release one node at a time.
+    options:
+      kubernetes_control_plane_group:
+        type: str
+        description: Inventory group with the control-plane nodes.
+        default: k8s_control_plane
+      kubernetes_worker_group:
+        type: str
+        description: Inventory group with the worker nodes.
+        default: k8s_workers
+      kubernetes_version:
+        type: str
+        description: Kubernetes release without the leading v, or "latest".
+        default: 1.36.5
+      kubernetes_cilium_version:
+        type: str
+        description: Cilium release without the leading v, or "latest".
+        default: 1.20.4
+      kubernetes_cilium_cli_version:
+        type: str
+        description: Cilium CLI release such as v0.20.1, or "latest".
+        default: v0.20.1
+      kubernetes_helm_version:
+        type: str
+        description: Helm v3 release such as v3.22.1, or "latest".
+        default: v3.22.1
+      kubernetes_longhorn_version:
+        type: str
+        description: Longhorn release without the leading v, or "latest".
+        default: 1.13.0
+      kubernetes_metrics_server_version:
+        type: str
+        description: metrics-server release such as v0.9.0, or "latest".
+        default: v0.9.0
+      kubernetes_held_packages:
+        type: list
+        description: Packages that apt holds outside the upgrade flow.
+        elements: str
+        default:
+          - kubelet
+          - kubeadm
+          - kubectl
+      kubernetes_offline_mode:
+        type: bool
+        description: Install from the staged offline bundle instead of the internet.
+        default: false
+      kubernetes_apiserver_port:
+        type: int
+        description: kube-apiserver port on each controller.
+        default: 6443
+      kubernetes_hardening_enabled:
+        type: bool
+        description: Manage API server audit logging, Secret encryption, and Pod Security admission.
+        default: true
+      kubernetes_hardening_directory:
+        type: path
+        description: Controller directory for the API server hardening files.
+        default: /etc/kubernetes/hardening
+      kubernetes_audit_log_enabled:
+        type: bool
+        description: Enable API server audit logging.
+        default: true
+      kubernetes_audit_log_directory:
+        type: path
+        description: Directory for API server audit logs.
+        default: /var/log/kubernetes/audit
+      kubernetes_audit_log_maxage:
+        type: int
+        description: Days to keep rotated audit logs.
+        default: 30
+      kubernetes_audit_log_maxbackup:
+        type: int
+        description: Number of rotated audit logs to keep.
+        default: 10
+      kubernetes_audit_log_maxsize:
+        type: int
+        description: Audit log size in MB before rotation.
+        default: 100
+      kubernetes_secrets_encryption_enabled:
+        type: bool
+        description: Encrypt Secrets at rest in etcd.
+        default: true
+      kubernetes_secrets_encryption_stage:
+        type: str
+        description: prepare reads encrypted Secrets only; active also writes them encrypted.
+        choices:
+          - prepare
+          - active
+        default: active
+      kubernetes_secrets_encryption_key:
+        type: str
+        description: Base64-encoded 32-byte Secret encryption key; generated when empty.
+        no_log: true
+        default: ''
+      kubernetes_pod_security_enabled:
+        type: bool
+        description: Configure cluster-wide Pod Security admission defaults.
+        default: true
+      kubernetes_pod_security_enforce:
+        type: str
+        description: Pod Security level that is enforced.
+        choices:
+          - privileged
+          - baseline
+          - restricted
+        default: baseline
+      kubernetes_pod_security_audit:
+        type: str
+        description: Pod Security level that is audited.
+        choices:
+          - privileged
+          - baseline
+          - restricted
+        default: restricted
+      kubernetes_pod_security_warn:
+        type: str
+        description: Pod Security level that triggers warnings.
+        choices:
+          - privileged
+          - baseline
+          - restricted
+        default: restricted
+      kubernetes_pod_security_exempt_namespaces:
+        type: list
+        description: Namespaces exempt from the Pod Security defaults.
+        elements: str
+        default:
+          - kube-system
+          - longhorn-system
+          - '{{ kubernetes_registry_namespace }}'
+          - '{{ kubernetes_prometheus_stack_namespace }}'
+      kubernetes_etcd_backup_enabled:
+        type: bool
+        description: Schedule etcd snapshots on every controller.
+        default: true
+      kubernetes_upgrade_drain_timeout:
+        type: str
+        description: kubectl drain timeout used by the upgrade and removal flows.
+        default: 600s
+      kubernetes_upgrade_cilium:
+        type: bool
+        description: Upgrade Cilium to the pinned release in the upgrade flow.
+        default: false
+  remove_node:
+    short_description: Drain and remove nodes from the cluster.
+    options:
+      kubernetes_control_plane_group:
+        type: str
+        description: Inventory group with the control-plane nodes.
+        default: k8s_control_plane
+      kubernetes_worker_group:
+        type: str
+        description: Inventory group with the worker nodes.
+        default: k8s_workers
+      kubernetes_registry_node:
+        type: str
+        description: Control-plane node that runs registry and staging tasks.
+        default: '{{ groups[kubernetes_control_plane_group][0] }}'
+      kubernetes_longhorn_replica_count:
+        type: int
+        description: Longhorn replicas of the registry volume.
+        default: 3
+      kubernetes_registry_replicas:
+        type: int
+        description: Number of registry pods.
+        default: 2
+      kubernetes_upgrade_drain_timeout:
+        type: str
+        description: kubectl drain timeout used by the upgrade and removal flows.
+        default: 600s
+      kubernetes_remove_nodes:
+        type: list
+        description: Inventory hosts to remove in the node removal flow.
+        elements: str
+        required: true
+      kubernetes_remove_node_eviction_timeout:
+        type: int
+        description: Seconds to wait for Longhorn to evict replicas from a removed node.
+        default: 1800

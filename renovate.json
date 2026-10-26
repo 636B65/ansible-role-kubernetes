@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["custom.regex"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Pinned component versions in defaults/main.yml",
+      "managerFilePatterns": ["/^defaults/main\\.yml$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+)(?: registryUrl=(?<registryUrl>\\S+))? depName=(?<depName>\\S+)\\n[a-z_]+: \"(?<currentValue>[^\"]+)\""
+      ],
+      "extractVersionTemplate": "^v?(?<version>.*)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Keep v-prefixed values v-prefixed",
+      "matchDepNames": ["cilium/cilium-cli", "helm/helm", "kubernetes-sigs/metrics-server"],
+      "extractVersion": "^(?<version>v.*)$"
+    },
+    {
+      "description": "Stay on Helm v3 until the role supports Helm v4",
+      "matchDepNames": ["helm/helm"],
+      "allowedVersions": "/^v3\\./"
+    },
+    {
+      "description": "Kubernetes minor upgrades go through the upgrade playbook and must match Cilium support",
+      "matchDepNames": ["kubernetes/kubernetes"],
+      "matchUpdateTypes": ["minor", "major"],
+      "dependencyDashboardApproval": true
+    }
+  ]
+}

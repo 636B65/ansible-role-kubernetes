@@ -1,0 +1,199 @@
+---
+- name: Render and verify hardening, firewall, backup, and offline helpers
+  hosts: test-cp
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../defaults/main.yml
+    - ../vars/main.yml
+  vars:
+    test_output_dir: "{{ lookup('env', 'RUNNER_TEMP') | default('/tmp', true) }}/kubernetes-role-operations"
+    role_root: "{{ playbook_dir | dirname }}"
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    ansible_default_ipv4:
+      address: 192.0.2.11
+      interface: eth0
+    ansible_architecture: x86_64
+  tasks:
+    - name: Set the test cluster values that override the role defaults
+      ansible.builtin.set_fact:
+        loginusername: tester
+        kubernetes_api_vip: 192.0.2.10
+        kubernetes_resolved_version: 1.36.5
+        kubernetes_secrets_encryption_key_value: "{{ 'a' * 43 }}="
+
+    - name: Validate the role defaults against the argument specification
+      ansible.builtin.validate_argument_spec:
+        argument_spec: "{{ (lookup('file', role_root ~ '/meta/argument_specs.yml') | from_yaml).argument_specs.main.options }}"
+
+    - name: Create the output directory
+      ansible.builtin.file:
+        path: "{{ test_output_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Render the operational templates
+      ansible.builtin.template:
+        src: "{{ role_root }}/templates/{{ item }}.j2"
+        dest: "{{ test_output_dir }}/{{ item }}"
+        mode: "0600"
+      loop:
+        - kubeadm-config.yaml
+        - audit-policy.yaml
+        - admission-config.yaml
+        - encryption-config.yaml
+        - kubernetes-firewall.nft
+        - kubernetes-etcd-backup.sh
+        - kubernetes-offline-stage-debs.sh
+
+    - name: Render the encryption configuration in prepare mode
+      ansible.builtin.template:
+        src: "{{ role_root }}/templates/encryption-config.yaml.j2"
+        dest: "{{ test_output_dir }}/encryption-config-prepare.yaml"
+        mode: "0600"
+      vars:
+        kubernetes_secrets_encryption_stage: prepare
+
+    - name: Parse the rendered Kubernetes configuration files
+      ansible.builtin.set_fact:
+        test_kubeadm: "{{ lookup('file', test_output_dir ~ '/kubeadm-config.yaml') | from_yaml_all | list }}"
+        test_admission: "{{ lookup('file', test_output_dir ~ '/admission-config.yaml') | from_yaml }}"
+        test_audit: "{{ lookup('file', test_output_dir ~ '/audit-policy.yaml') | from_yaml }}"
+        test_encryption_active: "{{ lookup('file', test_output_dir ~ '/encryption-config.yaml') | from_yaml }}"
+        test_encryption_prepare: "{{ lookup('file', test_output_dir ~ '/encryption-config-prepare.yaml') | from_yaml }}"
+
+    - name: Verify the kubeadm configuration and API server hardening
+      ansible.builtin.assert:
+        that:
+          - test_kubeadm | map(attribute='kind') | list == ['InitConfiguration', 'ClusterConfiguration']
+          - test_kubeadm[1].kubernetesVersion == 'v1.36.5'
+          - test_kubeadm[1].controlPlaneEndpoint == '192.0.2.10:8443'
+          - test_kubeadm[1].networking.podSubnet == '10.244.0.0/16'
+          - test_kubeadm[0].localAPIEndpoint.advertiseAddress == '192.0.2.11'
+          - test_kubeadm[0].nodeRegistration.name == 'test-cp'
+          - >-
+            test_kubeadm[1].apiServer.extraArgs | map(attribute='name') | list
+            == ['audit-policy-file', 'audit-log-path', 'audit-log-maxage', 'audit-log-maxbackup',
+                'audit-log-maxsize', 'encryption-provider-config',
+                'encryption-provider-config-automatic-reload', 'admission-control-config-file']
+          - test_kubeadm[1].apiServer.extraArgs | map(attribute='value') | select('string') | list | length == 8
+          - test_kubeadm[1].apiServer.extraVolumes | map(attribute='hostPath') | list
+            == ['/etc/kubernetes/hardening', '/var/log/kubernetes/audit']
+
+    - name: Verify Pod Security, audit, and encryption settings
+      ansible.builtin.assert:
+        that:
+          - test_admission.plugins[0].configuration.defaults.enforce == 'baseline'
+          - "'local-registry' in test_admission.plugins[0].configuration.exemptions.namespaces"
+          - "'monitoring' in test_admission.plugins[0].configuration.exemptions.namespaces"
+          - test_audit.kind == 'Policy'
+          - test_audit.rules[-1].level == 'Metadata'
+          - test_encryption_active.resources[0].providers | map('first') | list == ['secretbox', 'identity']
+          - test_encryption_prepare.resources[0].providers | map('first') | list == ['identity', 'secretbox']
+
+    - name: Verify the firewall rules
+      ansible.builtin.assert:
+        that:
+          - "'policy drop;' in test_firewall"
+          - "'elements = { 192.0.2.11, 192.0.2.21, 192.0.2.22, 192.0.2.23 }' in test_firewall"
+          - "'ip saddr @api_networks ip daddr 192.0.2.10 tcp dport 8443 accept' in test_firewall"
+          - "'ip saddr @admin_networks tcp dport 22 accept' in test_firewall"
+          - "'delete table inet kubernetes_host_firewall' in test_firewall"
+          - "'flush ruleset' not in test_firewall"
+      vars:
+        test_firewall: "{{ lookup('file', test_output_dir ~ '/kubernetes-firewall.nft') }}"
+
+    - name: Check the shell scripts for syntax errors
+      ansible.builtin.command:
+        argv:
+          - bash
+          - -n
+          - "{{ test_output_dir }}/{{ item }}"
+      changed_when: false
+      loop:
+        - kubernetes-etcd-backup.sh
+        - kubernetes-offline-stage-debs.sh
+
+    - name: Normalize image references for the offline bundle
+      ansible.builtin.set_fact:
+        test_normalized_images: "{{ test_normalized_images | default([]) + [kubernetes_image_ref_qualified] }}"
+      vars:
+        kubernetes_image_ref: "{{ item }}"
+      loop:
+        - registry:2.8.3
+        - docker.io/library/nginx:1.30.6
+        - longhornio/longhorn-manager:v1.13.0
+        - quay.io/cilium/cilium:v1.20.4@sha256:0000000000000000000000000000000000000000000000000000000000000000
+        - registry.k8s.io/pause:3.10
+        - ubuntu
+        - localhost:5000/tools/debug
+
+    - name: Verify the normalized image references and archive names
+      ansible.builtin.assert:
+        that:
+          - >-
+            test_normalized_images == [
+              'docker.io/library/registry:2.8.3',
+              'docker.io/library/nginx:1.30.6',
+              'docker.io/longhornio/longhorn-manager:v1.13.0',
+              'quay.io/cilium/cilium:v1.20.4',
+              'registry.k8s.io/pause:3.10',
+              'docker.io/library/ubuntu:latest',
+              'localhost:5000/tools/debug:latest',
+            ]
+          - kubernetes_image_archive == '/opt/kubernetes-offline/images/quay.io_cilium_cilium_v1.20.4.tar'
+      vars:
+        kubernetes_image_ref: quay.io/cilium/cilium:v1.20.4@sha256:00
+
+    - name: Verify the online Cilium install values
+      ansible.builtin.assert:
+        that:
+          - "'hubble.relay.enabled=true' in kubernetes_cilium_install_values"
+          - "'image.useDigest=false' not in kubernetes_cilium_install_values"
+
+    - name: Verify the offline Cilium install values
+      ansible.builtin.assert:
+        that:
+          - "'image.useDigest=false' in kubernetes_cilium_install_values"
+      vars:
+        kubernetes_offline_mode: true
+
+    - name: Merge the hardening settings into an existing kubeadm configuration
+      ansible.builtin.set_fact:
+        test_merged_configuration: "{{ kubernetes_upgrade_cluster_configuration_merged }}"
+      vars:
+        kubernetes_upgrade_cluster_configuration_current:
+          apiVersion: kubeadm.k8s.io/v1beta4
+          kind: ClusterConfiguration
+          kubernetesVersion: v1.36.5
+          apiServer:
+            extraArgs:
+              - name: authorization-mode
+                value: Node,RBAC
+              - name: audit-log-maxage
+                value: "1"
+            extraVolumes:
+              - name: custom
+                hostPath: /srv/custom
+                mountPath: /srv/custom
+
+    - name: Verify the merged kubeadm configuration
+      ansible.builtin.assert:
+        that:
+          - test_merged_configuration.kubernetesVersion == 'v1.36.5'
+          - test_merged_configuration.apiServer.extraArgs[0].value == 'Node,RBAC'
+          - test_merged_configuration.apiServer.extraArgs | selectattr('name', 'equalto', 'audit-log-maxage') | list | length == 1
+          - (test_merged_configuration.apiServer.extraArgs | selectattr('name', 'equalto', 'audit-log-maxage') | first).value == '30'
+          - test_merged_configuration.apiServer.extraArgs | length == 9
+          - test_merged_configuration.apiServer.extraVolumes | map(attribute='name') | list
+            == ['custom', 'kubernetes-hardening', 'kubernetes-audit-log']
+          - kubernetes_upgrade_cluster_configuration_merged == test_merged_configuration
+      vars:
+        kubernetes_upgrade_cluster_configuration_current: "{{ test_merged_configuration }}"
+
+    - name: Verify the API server flags used to detect missing hardening
+      ansible.builtin.assert:
+        that:
+          - "'--encryption-provider-config=/etc/kubernetes/hardening/encryption-config.yaml' in kubernetes_apiserver_hardening_flags"
+          - "'--audit-log-maxage=30' in kubernetes_apiserver_hardening_flags"
+          - kubernetes_apiserver_hardening_flags | length == 8

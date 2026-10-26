@@ -2,8 +2,11 @@
 
 An Ansible role for installing a Kubernetes cluster with containerd, Cilium,
 HAProxy and Keepalived on the control-plane nodes, plus an internal Docker
-Distribution registry backed by replicated Longhorn storage. The role resolves
-the latest stable Kubernetes, Cilium, and Longhorn releases at runtime.
+Distribution registry backed by replicated Longhorn storage. Component
+versions are pinned for reproducible installs, and the role includes rolling
+upgrades, scheduled etcd backups, API server hardening, an optional host
+firewall, observability add-ons, node removal, and an offline installation
+mode.
 
 > **Before you run this role:** replace all `changeme` values, configure your
 > inventory and API virtual IP, review the network requirements, and keep
@@ -57,10 +60,11 @@ package and image repositories. To prepare for later offline use, the role
 also installs Helm and the Cilium CLI on each controller, saves their release
 archives and the installed Cilium chart under `/opt/kubernetes-offline`, and
 mirrors every image rendered from the active Cilium Helm values into the local
-registry. The registry also receives the NGINX `stable` image used by the
+registry. The registry also receives the pinned NGINX image used by the
 LoadBalancer guide. Complete registry staging before exporting the VMs as
-OVAs; this does not make installation of an empty cluster possible without
-separately staging OS packages and bootstrap images. All nodes need
+OVAs. To install an empty cluster without internet access, stage a full
+offline bundle with packages and bootstrap images as described in
+[Offline installation](docs/offline.md). All nodes need
 connectivity to one another for Kubernetes/Cilium/Longhorn traffic and
 synchronized clocks.
 
@@ -80,6 +84,28 @@ For an example NGINX workload exposed through a Cilium-managed
 [NGINX and Cilium LoadBalancer guide](docs/deploy-nginx-cilium-loadbalancer.md).
 To run an interactive Ubuntu pod from the image in the local registry, see the
 [Ubuntu pod guide](docs/deploy-ubuntu-pod.md).
+
+## Operations guides
+
+| Guide | Covers |
+| --- | --- |
+| [Upgrade Kubernetes](docs/upgrade.md) | Rolling upgrades with `examples/upgrade.yml`, Cilium and Longhorn upgrades |
+| [API server hardening](docs/hardening.md) | Audit logging, encryption of Secrets at rest, Pod Security admission, rollout to existing clusters |
+| [etcd backup and restore](docs/etcd-backup-restore.md) | Scheduled snapshots and a full restore procedure |
+| [Host firewall](docs/firewall.md) | Optional nftables input filter |
+| [Add and remove nodes](docs/scaling.md) | Scale-out, `examples/remove-node.yml`, replacing failed nodes |
+| [Offline installation](docs/offline.md) | Staging a package and image bundle, installing without internet access |
+| [Troubleshooting](docs/troubleshooting.md) | VIP, etcd, joins, Longhorn, registry, Pod Security, upgrades |
+
+## Observability
+
+The role installs [metrics-server](https://github.com/kubernetes-sigs/metrics-server)
+(`kubectl top`) and enables Cilium [Hubble](https://docs.cilium.io/en/stable/observability/hubble/)
+Relay and UI by default. Open the Hubble UI from a controller with
+`cilium hubble ui`. Set `kubernetes_prometheus_stack_enabled: true` and a
+`kubernetes_grafana_admin_password` of at least 12 characters (from Vault) to
+also install kube-prometheus-stack in the `monitoring` namespace; it needs
+internet access. Run the `observability` tag to apply changes.
 
 ## Configure before running
 
@@ -115,7 +141,8 @@ To run an interactive Ubuntu pod from the image in the local registry, see the
    traffic required by your environment, TCP `8443` to the API VIP, TCP `6443`
    to controller API servers, and Keepalived VRRP/unicast traffic between
    controllers. The HAProxy statistics page is unauthenticated on TCP `8404`;
-   restrict it to trusted administrator networks.
+   restrict it to trusted administrator networks. The role can manage these
+   rules with nftables; see [Host firewall](docs/firewall.md).
 
 The registry uses a Longhorn `ReadWriteMany` volume with three replicas by
 default, and runs two registry pods. The default claim size is 8 GiB; with
@@ -188,6 +215,13 @@ registry; run it while the first control-plane node is available:
 | `registry_images` | Copy configured, NGINX, and active Cilium chart images into the registry; stage the chart and tools on controllers |
 | `cilium_offline` | Stage the active Cilium chart and rendered images, plus Helm and Cilium CLI, for offline use |
 | `registry` | Run Longhorn installation and all registry tasks |
+| `firewall` | Configure or remove the nftables host firewall |
+| `hardening` | Write the API server audit, encryption, and Pod Security files on controllers |
+| `etcd_backup` | Install the scheduled etcd backup on controllers |
+| `observability` | Install metrics-server, enable Hubble, and optionally kube-prometheus-stack |
+| `offline_stage` | Stage the offline package and image bundle (only runs when requested) |
+| `upgrade` | Rolling upgrade; needs `serial: 1`, see `examples/upgrade.yml` (only runs when requested) |
+| `remove_node` | Remove `kubernetes_remove_nodes`; see `examples/remove-node.yml` (only runs when requested) |
 
 Example:
 
@@ -198,11 +232,55 @@ ansible-playbook -i examples/inventory.yml examples/site.yml \
 
 ## Versioning and releases
 
-Kubernetes and Cilium stable versions are discovered at playbook runtime. This
-tracks current stable releases but is not reproducible by default; pin package
-and Cilium versions in a controlled environment if repeatable deployments are
-required.
+### Component versions
 
-Push a version tag such as `v1.0.0` to run the CI checks and publish a GitHub
-Release. The release workflow requires the repository's standard
-`GITHUB_TOKEN` permission to create releases.
+All components are pinned in `defaults/main.yml`:
+
+| Variable | Default |
+| --- | --- |
+| `kubernetes_version` | `1.36.5` |
+| `kubernetes_cilium_version` | `1.20.4` |
+| `kubernetes_cilium_cli_version` | `v0.20.1` |
+| `kubernetes_helm_version` | `v3.22.1` |
+| `kubernetes_longhorn_version` | `1.13.0` |
+| `kubernetes_metrics_server_version` | `v0.9.0` |
+| `kubernetes_prometheus_stack_version` | `92.14.0` |
+
+Set a value to `latest` to resolve the newest stable release at runtime
+instead; this is not reproducible and is refused in offline mode. apt holds
+`kubelet`, `kubeadm`, and `kubectl` (`kubernetes_held_packages`), and the role
+never changes installed Kubernetes packages outside the
+[upgrade flow](docs/upgrade.md). [Renovate](https://docs.renovatebot.com/)
+proposes updates of the pinned versions (`renovate.json`; it needs the
+Renovate GitHub app), and Dependabot updates the GitHub Actions.
+
+### Role releases
+
+The role follows [Semantic Versioning](https://semver.org/):
+
+- **Major** (`v2.0.0`): changes that need action from users, such as renamed
+  or removed variables, changed defaults that alter a running cluster, or a
+  new minimum Ansible or OS version.
+- **Minor** (`v1.1.0`): new features and new variables with backwards
+  compatible defaults, and Kubernetes minor version bumps of the pinned
+  defaults.
+- **Patch** (`v1.0.1`): bug fixes, documentation, and patch releases of
+  pinned components.
+
+Record every change under `Unreleased` in [CHANGELOG.md](CHANGELOG.md). To
+release, move those entries under a new version heading, then push a version
+tag such as `v1.0.0` to run the CI checks and publish a GitHub Release. The
+release workflow requires the repository's standard `GITHUB_TOKEN`
+permission to create releases.
+
+### Tests
+
+CI runs `ansible-lint`, syntax checks of the role and example playbooks,
+template rendering tests (`tests/render.yml`, `tests/operations.yml`),
+`nft --check` on the rendered firewall, and `shellcheck` on the generated
+scripts. To check idempotence against a real lab cluster, run the site
+playbook twice and require no changes on the second run:
+
+```sh
+tests/idempotence.sh -i examples/inventory.yml examples/site.yml --ask-vault-pass
+```

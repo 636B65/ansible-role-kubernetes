@@ -1,0 +1,190 @@
+---
+kubernetes_cri_socket: unix:///run/containerd/containerd.sock
+kubernetes_admin_kubeconfig: /etc/kubernetes/admin.conf
+kubernetes_first_controller: "{{ groups[kubernetes_control_plane_group][0] }}"
+kubernetes_cluster_hosts: "{{ (groups[kubernetes_control_plane_group] + groups[kubernetes_worker_group]) | unique | list }}"
+kubernetes_architecture: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}.get(ansible_architecture, '') }}"
+
+kubernetes_offline_debs_directory: "{{ kubernetes_offline_assets_directory }}/debs"
+kubernetes_offline_images_directory: "{{ kubernetes_offline_assets_directory }}/images"
+kubernetes_offline_manifests_directory: "{{ kubernetes_offline_assets_directory }}/manifests"
+
+kubernetes_cilium_cli_archive: >-
+  {{ kubernetes_offline_assets_directory }}/cilium-cli/cilium-cli-{{
+  kubernetes_cilium_cli_resolved_version | default('') }}-linux-{{ kubernetes_architecture }}.tar.gz
+kubernetes_cilium_chart_archive: >-
+  {{ kubernetes_offline_assets_directory }}/cilium/cilium-v{{
+  kubernetes_cilium_resolved_version | default('') }}.tgz
+kubernetes_longhorn_manifest: >-
+  {{ kubernetes_offline_manifests_directory }}/longhorn-v{{
+  kubernetes_longhorn_resolved_version | default('') }}.yaml
+kubernetes_longhorn_images_list: >-
+  {{ kubernetes_offline_manifests_directory }}/longhorn-images-v{{
+  kubernetes_longhorn_resolved_version | default('') }}.txt
+kubernetes_metrics_server_manifest: >-
+  {{ kubernetes_offline_manifests_directory }}/metrics-server-{{
+  kubernetes_metrics_server_resolved_version | default('') }}.yaml
+
+# Cilium Helm values that make every image reference tag-only, so images
+# imported from the offline bundle match what the chart renders.
+kubernetes_cilium_offline_values:
+  - image.useDigest=false
+  - operator.image.useDigest=false
+  - hubble.relay.image.useDigest=false
+  - envoy.image.useDigest=false
+  - certgen.image.useDigest=false
+  - clustermesh.apiserver.image.useDigest=false
+  - preflight.image.useDigest=false
+
+kubernetes_cilium_install_values: >-
+  {{
+    ['ipam.mode=kubernetes', 'kubeProxyReplacement=false']
+    + (['hubble.relay.enabled=true', 'hubble.ui.enabled=true'] if kubernetes_hubble_enabled else [])
+    + (kubernetes_cilium_offline_values if kubernetes_offline_mode else [])
+  }}
+
+kubernetes_audit_policy_file: "{{ kubernetes_hardening_directory }}/audit-policy.yaml"
+kubernetes_encryption_config_file: "{{ kubernetes_hardening_directory }}/encryption-config.yaml"
+kubernetes_admission_config_file: "{{ kubernetes_hardening_directory }}/admission-config.yaml"
+
+# API server flags and volumes managed by the hardening settings. The same
+# lists render the kubeadm configuration for new clusters and update the
+# kubeadm-config ConfigMap of existing clusters during upgrades.
+kubernetes_apiserver_hardening_args: >-
+  {{
+    (
+      [
+        {'name': 'audit-policy-file', 'value': kubernetes_audit_policy_file},
+        {'name': 'audit-log-path', 'value': kubernetes_audit_log_directory ~ '/audit.log'},
+        {'name': 'audit-log-maxage', 'value': kubernetes_audit_log_maxage | string},
+        {'name': 'audit-log-maxbackup', 'value': kubernetes_audit_log_maxbackup | string},
+        {'name': 'audit-log-maxsize', 'value': kubernetes_audit_log_maxsize | string},
+      ]
+      if kubernetes_audit_log_enabled else []
+    )
+    + (
+      [
+        {'name': 'encryption-provider-config', 'value': kubernetes_encryption_config_file},
+        {'name': 'encryption-provider-config-automatic-reload', 'value': 'true'},
+      ]
+      if kubernetes_secrets_encryption_enabled else []
+    )
+    + (
+      [{'name': 'admission-control-config-file', 'value': kubernetes_admission_config_file}]
+      if kubernetes_pod_security_enabled else []
+    )
+    if kubernetes_hardening_enabled else []
+  }}
+kubernetes_apiserver_hardening_volumes: >-
+  {{
+    (
+      [
+        {
+          'name': 'kubernetes-hardening',
+          'hostPath': kubernetes_hardening_directory,
+          'mountPath': kubernetes_hardening_directory,
+          'readOnly': true,
+          'pathType': 'DirectoryOrCreate',
+        }
+      ]
+      + (
+        [
+          {
+            'name': 'kubernetes-audit-log',
+            'hostPath': kubernetes_audit_log_directory,
+            'mountPath': kubernetes_audit_log_directory,
+            'readOnly': false,
+            'pathType': 'DirectoryOrCreate',
+          }
+        ]
+        if kubernetes_audit_log_enabled else []
+      )
+    )
+    if kubernetes_hardening_enabled else []
+  }}
+
+kubernetes_firewall_rules_file: /etc/kubernetes-firewall.nft
+kubernetes_firewall_service: kubernetes-firewall.service
+
+kubernetes_etcd_backup_script: /usr/local/sbin/kubernetes-etcd-backup
+kubernetes_etcd_backup_service: kubernetes-etcd-backup.service
+
+# Normalize an image reference passed in as kubernetes_image_ref: drop any
+# digest, add the implicit "latest" tag and Docker Hub prefixes, and derive
+# the archive path used in the offline bundle.
+kubernetes_image_ref_tagged: >-
+  {{
+    kubernetes_image_ref
+    | regex_replace('@sha256:.*$', '')
+    | regex_replace('^((?:.*/)?[^/:]+)$', '\1:latest')
+  }}
+kubernetes_image_ref_qualified: >-
+  {{
+    kubernetes_image_ref_tagged
+    if (
+      kubernetes_image_ref_tagged.split('/') | length > 1
+      and (
+        kubernetes_image_ref_tagged.split('/')[0] is search('[.:]')
+        or kubernetes_image_ref_tagged.split('/')[0] == 'localhost'
+      )
+    )
+    else 'docker.io/'
+      ~ ('library/' if kubernetes_image_ref_tagged.split('/') | length == 1 else '')
+      ~ kubernetes_image_ref_tagged
+  }}
+kubernetes_image_archive: >-
+  {{ kubernetes_offline_images_directory }}/{{
+  kubernetes_image_ref_qualified | regex_replace('[/:]', '_') }}.tar
+kubernetes_offline_images_list: "{{ kubernetes_offline_images_directory }}/images.txt"
+
+kubernetes_offline_packages:
+  - "{{ containerd_package }}"
+  - kubelet
+  - kubeadm
+  - kubectl
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gpg
+  - haproxy
+  - keepalived
+  - open-iscsi
+  - nfs-common
+  - skopeo
+  - nftables
+  - python3-apt
+  - apt-utils
+
+# Command-line form of the hardening flags, as kubeadm renders them into the
+# kube-apiserver static pod manifest.
+kubernetes_apiserver_hardening_flags: >-
+  {{
+    kubernetes_apiserver_hardening_args
+    | map(attribute='name')
+    | map('regex_replace', '^', '--')
+    | zip(kubernetes_apiserver_hardening_args | map(attribute='value'))
+    | map('join', '=')
+    | list
+  }}
+
+# kubeadm ClusterConfiguration (kubernetes_upgrade_cluster_configuration_current)
+# with the managed hardening flags and volumes replaced or added.
+kubernetes_upgrade_cluster_configuration_merged: >-
+  {{
+    kubernetes_upgrade_cluster_configuration_current
+    | combine({
+        'apiServer': (kubernetes_upgrade_cluster_configuration_current.apiServer | default({}))
+        | combine({
+            'extraArgs': (
+              kubernetes_upgrade_cluster_configuration_current.apiServer.extraArgs | default([])
+              | rejectattr('name', 'in', kubernetes_apiserver_hardening_args | map(attribute='name') | list)
+              | list
+            ) + kubernetes_apiserver_hardening_args,
+            'extraVolumes': (
+              kubernetes_upgrade_cluster_configuration_current.apiServer.extraVolumes | default([])
+              | rejectattr('name', 'in', kubernetes_apiserver_hardening_volumes | map(attribute='name') | list)
+              | list
+            ) + kubernetes_apiserver_hardening_volumes,
+          })
+      })
+  }}

@@ -1,0 +1,187 @@
+---
+# Remove the nodes listed in kubernetes_remove_nodes. Run with
+# examples/remove-node.yml, which handles one node at a time (serial: 1).
+- name: Validate the nodes selected for removal
+  ansible.builtin.assert:
+    that:
+      - kubernetes_remove_nodes | length > 0
+      - kubernetes_remove_nodes | reject('in', kubernetes_cluster_hosts) | list | length == 0
+      - kubernetes_first_controller not in kubernetes_remove_nodes
+      - kubernetes_registry_node not in kubernetes_remove_nodes
+      - >-
+        groups[kubernetes_control_plane_group]
+        | reject('in', kubernetes_remove_nodes) | list | length >= 1
+      - >-
+        groups[kubernetes_worker_group]
+        | reject('in', kubernetes_remove_nodes) | list | length
+        >= [kubernetes_longhorn_replica_count | int, kubernetes_registry_replicas | int] | max
+    fail_msg: >-
+      Set kubernetes_remove_nodes to inventory hosts of this cluster. The first
+      controller ({{ kubernetes_first_controller }}) and the registry staging
+      node cannot be removed; reorder the inventory so another controller is
+      first. At least one controller and enough workers for
+      {{ kubernetes_longhorn_replica_count }} Longhorn replicas and
+      {{ kubernetes_registry_replicas }} registry pods must remain.
+  run_once: true
+
+- name: Require removal of one node at a time
+  ansible.builtin.assert:
+    that:
+      - ansible_play_batch | length == 1
+    fail_msg: Remove nodes one at a time. Use examples/remove-node.yml or serial 1.
+  run_once: true
+
+- name: Remove this node from the cluster
+  when: inventory_hostname in kubernetes_remove_nodes
+  block:
+    - name: Check whether the node is registered in Kubernetes
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig
+          - "{{ kubernetes_admin_kubeconfig }}"
+          - get
+          - node
+          - "{{ inventory_hostname }}"
+          - --output
+          - name
+      register: kubernetes_remove_node_registered
+      changed_when: false
+      failed_when: false
+      delegate_to: "{{ kubernetes_first_controller }}"
+
+    - name: Stop scheduling Longhorn replicas on the node and evict its replicas
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig
+          - "{{ kubernetes_admin_kubeconfig }}"
+          - patch
+          - nodes.longhorn.io
+          - "{{ inventory_hostname }}"
+          - --namespace
+          - longhorn-system
+          - --type=merge
+          - --patch
+          - '{"spec":{"allowScheduling":false,"evictionRequested":true}}'
+      register: kubernetes_remove_longhorn_eviction
+      changed_when: "'(no change)' not in kubernetes_remove_longhorn_eviction.stdout"
+      failed_when:
+        - kubernetes_remove_longhorn_eviction.rc != 0
+        - "'NotFound' not in kubernetes_remove_longhorn_eviction.stderr"
+      delegate_to: "{{ kubernetes_first_controller }}"
+      when: kubernetes_remove_node_registered.rc == 0
+
+    - name: Wait until Longhorn has moved every replica off the node
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig
+          - "{{ kubernetes_admin_kubeconfig }}"
+          - get
+          - replicas.longhorn.io
+          - --namespace
+          - longhorn-system
+          - --output
+          - json
+      register: kubernetes_remove_longhorn_replicas
+      changed_when: false
+      retries: "{{ (kubernetes_remove_node_eviction_timeout | int / 15) | round(0, 'ceil') | int }}"
+      delay: 15
+      until: >-
+        kubernetes_remove_longhorn_replicas.rc == 0
+        and (kubernetes_remove_longhorn_replicas.stdout | from_json)['items']
+        | selectattr('spec.nodeID', 'equalto', inventory_hostname)
+        | list | length == 0
+      delegate_to: "{{ kubernetes_first_controller }}"
+      when:
+        - kubernetes_remove_node_registered.rc == 0
+        - kubernetes_remove_longhorn_eviction.rc | default(1) == 0
+
+    - name: Drain the node
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig
+          - "{{ kubernetes_admin_kubeconfig }}"
+          - drain
+          - "{{ inventory_hostname }}"
+          - --ignore-daemonsets
+          - --delete-emptydir-data
+          - --timeout={{ kubernetes_upgrade_drain_timeout }}
+      changed_when: true
+      delegate_to: "{{ kubernetes_first_controller }}"
+      when: kubernetes_remove_node_registered.rc == 0
+
+    - name: Release the API virtual IP and stop the load balancer on a removed controller
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop:
+        - keepalived
+        - haproxy
+      when: inventory_hostname in groups[kubernetes_control_plane_group]
+
+    - name: Reset kubeadm state and leave etcd
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - reset
+          - --force
+          - --cri-socket={{ kubernetes_cri_socket }}
+      changed_when: true
+
+    - name: Remove the node's CNI configuration and kubectl access
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/cni/net.d
+        - /root/.kube/config
+
+    - name: Stop kubelet on the removed node
+      ansible.builtin.systemd:
+        name: kubelet
+        state: stopped
+        enabled: false
+
+    - name: Delete the node object from Kubernetes
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig
+          - "{{ kubernetes_admin_kubeconfig }}"
+          - delete
+          - node
+          - "{{ inventory_hostname }}"
+          - --ignore-not-found
+      register: kubernetes_remove_node_delete
+      changed_when: "'deleted' in kubernetes_remove_node_delete.stdout"
+      delegate_to: "{{ kubernetes_first_controller }}"
+
+    - name: Delete the Longhorn node object
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig
+          - "{{ kubernetes_admin_kubeconfig }}"
+          - delete
+          - nodes.longhorn.io
+          - "{{ inventory_hostname }}"
+          - --namespace
+          - longhorn-system
+          - --ignore-not-found
+      register: kubernetes_remove_longhorn_node
+      changed_when: "'deleted' in kubernetes_remove_longhorn_node.stdout"
+      retries: 12
+      delay: 10
+      until: kubernetes_remove_longhorn_node.rc == 0
+      delegate_to: "{{ kubernetes_first_controller }}"
+
+    - name: Report the follow-up step
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} has left the cluster. Remove it from the
+          inventory and run the site playbook again so HAProxy, Keepalived,
+          /etc/hosts, and the host firewall drop it on the remaining nodes.

@@ -1,6 +1,6 @@
 # Deploy NGINX with a Cilium LoadBalancer
 
-This guide deploys the `nginx:stable` image staged in the cluster's local
+This guide deploys the `nginx:1.30.6` image staged in the cluster's local
 registry and exposes it through a Kubernetes `Service` of type `LoadBalancer`.
 It uses Cilium LB IPAM to allocate a service IP and Cilium L2 Announcements to
 advertise that IP on the local network. It is intended for a bare-metal/on-premises
@@ -170,7 +170,7 @@ spec:
     spec:
       containers:
         - name: nginx
-          image: registry.k8s.local:30500/nginx:stable
+          image: registry.k8s.local:30500/nginx:1.30.6
           ports:
             - name: http
               containerPort: 80
