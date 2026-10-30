@@ -6,6 +6,11 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-30
+
+This is a major release: it changes defaults that affect running clusters.
+Read the upgrade notes below before running it against an existing cluster.
+
 ### Added
 
 - Pinned versions for Kubernetes, Cilium, the Cilium CLI, Helm, Longhorn,
@@ -72,3 +77,16 @@ All notable changes to this role are documented here. The format follows
   workloads that use the old tags from the internal registry.
 - Playbooks must still set `loginusername`; the argument specification now
   reports a missing value before any task runs.
+
+## [1.0.0] - 2026-10-16
+
+### Added
+
+- Initial release: containerd, Kubernetes, and Cilium installation with
+  HAProxy and Keepalived for a highly available API endpoint, and an internal
+  registry on replicated Longhorn storage with offline staging of the Cilium
+  chart and images.
+
+[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v1.0.0...v2.0.0
+[1.0.0]: https://github.com/636B65/ansible-role-kubernetes/releases/tag/v1.0.0
