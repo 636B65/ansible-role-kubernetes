@@ -184,6 +184,13 @@
   tags:
     - observability
 
+- name: Install the Headlamp web UI
+  ansible.builtin.import_tasks: headlamp.yml
+  when: kubernetes_headlamp_enabled
+  tags:
+    - observability
+    - headlamp
+
 - name: Stage an offline installation bundle
   ansible.builtin.import_tasks: offline_stage.yml
   tags:

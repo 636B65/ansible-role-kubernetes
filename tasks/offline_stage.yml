@@ -59,6 +59,23 @@
   loop_control:
     label: "{{ item.dest }}"
 
+- name: Stage the pinned Headlamp Helm chart on controllers
+  ansible.builtin.command:
+    argv:
+      - helm
+      - pull
+      - headlamp
+      - --repo
+      - https://kubernetes-sigs.github.io/headlamp/
+      - --version
+      - "{{ kubernetes_headlamp_version }}"
+      - --destination
+      - "{{ kubernetes_offline_manifests_directory }}"
+    creates: "{{ kubernetes_headlamp_chart_archive }}"
+  when:
+    - kubernetes_headlamp_enabled
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+
 - name: List the control-plane images for the pinned Kubernetes release
   ansible.builtin.command:
     argv:
@@ -118,6 +135,7 @@
           + (kubernetes_offline_longhorn_images.content | b64decode).splitlines()
           + (kubernetes_registry_images | map(attribute='source') | list)
           + [kubernetes_registry_image]
+          + ([kubernetes_headlamp_image] if kubernetes_headlamp_enabled else [])
           + kubernetes_offline_extra_images
         )
         | map('trim')

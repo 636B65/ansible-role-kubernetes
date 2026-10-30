@@ -33,6 +33,8 @@ kubernetes_longhorn_version: "1.13.0"
 kubernetes_metrics_server_version: "v0.9.0"
 # renovate: datasource=helm registryUrl=https://prometheus-community.github.io/helm-charts depName=kube-prometheus-stack
 kubernetes_prometheus_stack_version: "92.14.0"
+# renovate: datasource=helm registryUrl=https://kubernetes-sigs.github.io/headlamp/ depName=headlamp
+kubernetes_headlamp_version: "0.46.0"
 
 # Packages that apt must never upgrade outside the role's upgrade flow.
 kubernetes_held_packages:
@@ -128,6 +130,17 @@ kubernetes_hubble_enabled: true
 kubernetes_prometheus_stack_enabled: false
 kubernetes_prometheus_stack_namespace: monitoring
 kubernetes_grafana_admin_password: "changeme"
+
+# Headlamp web UI (the maintained successor of the archived Kubernetes
+# Dashboard). Users sign in with their own token; see docs/headlamp.md.
+kubernetes_headlamp_enabled: true
+kubernetes_headlamp_namespace: headlamp
+# ClusterIP keeps the UI inside the cluster (use kubectl port-forward).
+# NodePort exposes it on every node at kubernetes_headlamp_node_port.
+kubernetes_headlamp_service_type: ClusterIP
+kubernetes_headlamp_node_port: 30443
+# Create a cluster-admin ServiceAccount whose tokens can sign in to Headlamp.
+kubernetes_headlamp_admin_account_enabled: true
 
 # Upgrade flow (examples/upgrade.yml, tag "upgrade").
 kubernetes_upgrade_drain_timeout: 600s

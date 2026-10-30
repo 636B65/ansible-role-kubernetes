@@ -197,3 +197,19 @@
           - "'--encryption-provider-config=/etc/kubernetes/hardening/encryption-config.yaml' in kubernetes_apiserver_hardening_flags"
           - "'--audit-log-maxage=30' in kubernetes_apiserver_hardening_flags"
           - kubernetes_apiserver_hardening_flags | length == 8
+
+    - name: Verify the default Headlamp values
+      ansible.builtin.assert:
+        that:
+          - not kubernetes_headlamp_values.clusterRoleBinding.create
+          - "kubernetes_headlamp_values.service == {'type': 'ClusterIP'}"
+          - kubernetes_headlamp_values.securityContext.capabilities.drop == ['ALL']
+          - kubernetes_headlamp_values.podSecurityContext.seccompProfile.type == 'RuntimeDefault'
+          - kubernetes_headlamp_image == 'ghcr.io/headlamp-k8s/headlamp:v0.46.0'
+
+    - name: Verify the Headlamp values for a NodePort service
+      ansible.builtin.assert:
+        that:
+          - "kubernetes_headlamp_values.service == {'type': 'NodePort', 'nodePort': 30443}"
+      vars:
+        kubernetes_headlamp_service_type: NodePort

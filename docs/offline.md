@@ -14,7 +14,7 @@ bundle staged on a cluster that has it. The bundle lives in
 | `debs/` | Every package the role installs, with its full dependency closure, and an apt index (`Packages`) | `offline_stage` tag |
 | `images/*.tar` | Container images for this node architecture: kubeadm control-plane images, the containerd sandbox image, every image used by running pods, all Longhorn images, and the registry images | `offline_stage` tag |
 | `images/images.txt` | List of the staged image references | `offline_stage` tag |
-| `manifests/` | Longhorn and metrics-server manifests, and the Longhorn image list | `offline_stage` tag |
+| `manifests/` | Longhorn and metrics-server manifests, the Longhorn image list, and the Headlamp chart (controllers) | `offline_stage` tag |
 | `cilium/`, `cilium-cli/`, `helm/` | Cilium Helm chart, Cilium CLI, and Helm archives | `registry_images` / `cilium_offline` tags (controllers) |
 | `VERSIONS` | The component versions and platform of the bundle | `offline_stage` tag |
 
@@ -63,7 +63,8 @@ same CPU architecture, and the same pinned versions as the offline cluster.
      `kubeadm join`,
    - installs the Cilium CLI from the bundle and Cilium from the staged
      chart, with tag-only image references so the imported images match,
-   - applies the staged Longhorn and metrics-server manifests,
+   - applies the staged Longhorn and metrics-server manifests and installs
+     Headlamp from the staged chart,
    - fills the internal registry from the image archives.
 
 kube-prometheus-stack is installed from its upstream Helm repository and is

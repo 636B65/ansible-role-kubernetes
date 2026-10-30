@@ -188,3 +188,34 @@ kubernetes_upgrade_cluster_configuration_merged: >-
           })
       })
   }}
+
+kubernetes_headlamp_chart_archive: >-
+  {{ kubernetes_offline_manifests_directory }}/headlamp-{{ kubernetes_headlamp_version }}.tgz
+kubernetes_headlamp_image: "ghcr.io/headlamp-k8s/headlamp:v{{ kubernetes_headlamp_version }}"
+kubernetes_headlamp_admin_account: headlamp-admin
+
+# Helm values for Headlamp. The pod gets no cluster-admin binding: every user
+# signs in with a token of their own, and the container runs with the
+# restricted Pod Security profile.
+kubernetes_headlamp_values:
+  clusterRoleBinding:
+    create: false
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    privileged: false
+    readOnlyRootFilesystem: true
+    runAsGroup: 101
+    runAsNonRoot: true
+    runAsUser: 100
+  service: >-
+    {{
+      {'type': kubernetes_headlamp_service_type}
+      | combine({'nodePort': kubernetes_headlamp_node_port | int}
+        if kubernetes_headlamp_service_type == 'NodePort' else {})
+    }}

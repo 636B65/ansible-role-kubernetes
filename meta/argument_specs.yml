@@ -88,6 +88,10 @@ argument_specs:
         type: str
         description: kube-prometheus-stack Helm chart version.
         default: 92.14.0
+      kubernetes_headlamp_version:
+        type: str
+        description: Headlamp Helm chart version.
+        default: 0.46.0
       kubernetes_held_packages:
         type: list
         description: Packages that apt holds outside the upgrade flow.
@@ -344,6 +348,29 @@ argument_specs:
         description: Grafana admin password for kube-prometheus-stack.
         no_log: true
         default: changeme
+      kubernetes_headlamp_enabled:
+        type: bool
+        description: Install the Headlamp web UI.
+        default: true
+      kubernetes_headlamp_namespace:
+        type: str
+        description: Namespace of Headlamp.
+        default: headlamp
+      kubernetes_headlamp_service_type:
+        type: str
+        description: Service type of Headlamp.
+        choices:
+          - ClusterIP
+          - NodePort
+        default: ClusterIP
+      kubernetes_headlamp_node_port:
+        type: int
+        description: NodePort of Headlamp when the service type is NodePort.
+        default: 30443
+      kubernetes_headlamp_admin_account_enabled:
+        type: bool
+        description: Create the cluster-admin ServiceAccount used to sign in to Headlamp.
+        default: true
       kubernetes_upgrade_drain_timeout:
         type: str
         description: kubectl drain timeout used by the upgrade and removal flows.

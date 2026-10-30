@@ -1,0 +1,168 @@
+---
+- name: Validate the Headlamp settings
+  ansible.builtin.assert:
+    that:
+      - kubernetes_headlamp_service_type in ['ClusterIP', 'NodePort']
+      - >-
+        kubernetes_headlamp_service_type != 'NodePort'
+        or kubernetes_headlamp_node_port | int >= 30000
+        and kubernetes_headlamp_node_port | int <= 32767
+        and kubernetes_headlamp_node_port | int != kubernetes_registry_node_port | int
+    fail_msg: >-
+      kubernetes_headlamp_service_type must be ClusterIP or NodePort, and a
+      NodePort must be between 30000 and 32767 and differ from the registry
+      NodePort ({{ kubernetes_registry_node_port }}).
+  run_once: true
+
+- name: Require Helm for the Headlamp installation
+  ansible.builtin.stat:
+    path: /usr/local/bin/helm
+  register: kubernetes_headlamp_helm
+  when: inventory_hostname == kubernetes_first_controller
+
+- name: Validate that Helm is installed
+  ansible.builtin.assert:
+    that:
+      - kubernetes_headlamp_helm.stat.exists
+    fail_msg: >-
+      Headlamp is installed with Helm. Run the cilium_offline tag (part of
+      registry) first; it installs Helm on the controllers.
+  when: inventory_hostname == kubernetes_first_controller
+
+- name: Read the installed Headlamp release
+  ansible.builtin.command:
+    argv:
+      - helm
+      - list
+      - --namespace
+      - "{{ kubernetes_headlamp_namespace }}"
+      - --filter
+      - ^headlamp$
+      - --output
+      - json
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  register: kubernetes_headlamp_releases
+  changed_when: false
+  when: inventory_hostname == kubernetes_first_controller
+
+- name: Read the Headlamp release values
+  ansible.builtin.command:
+    argv:
+      - helm
+      - get
+      - values
+      - headlamp
+      - --namespace
+      - "{{ kubernetes_headlamp_namespace }}"
+      - --output
+      - json
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  register: kubernetes_headlamp_current_values
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname == kubernetes_first_controller
+
+- name: Render the Headlamp values
+  ansible.builtin.copy:
+    content: "{{ kubernetes_headlamp_values | to_nice_yaml(indent=2) }}"
+    dest: /etc/kubernetes/headlamp-values.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  when: inventory_hostname == kubernetes_first_controller
+
+- name: Install or upgrade Headlamp
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['helm', 'upgrade', '--install', 'headlamp']
+        + (
+          [kubernetes_headlamp_chart_archive]
+          if kubernetes_offline_mode
+          else ['headlamp', '--repo', 'https://kubernetes-sigs.github.io/headlamp/',
+                '--version', kubernetes_headlamp_version]
+        )
+        + ['--namespace', kubernetes_headlamp_namespace, '--create-namespace',
+           '--values', '/etc/kubernetes/headlamp-values.yaml',
+           '--wait', '--timeout', '10m']
+      }}
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  changed_when: true
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - >-
+      (
+        kubernetes_headlamp_releases.stdout | from_json
+        | selectattr('status', 'equalto', 'deployed')
+        | selectattr('chart', 'equalto', 'headlamp-' ~ kubernetes_headlamp_version)
+        | list | length == 0
+      )
+      or kubernetes_headlamp_current_values.rc != 0
+      or (kubernetes_headlamp_current_values.stdout | from_json) != kubernetes_headlamp_values
+
+- name: Render the Headlamp admin account
+  ansible.builtin.copy:
+    content: |
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: {{ kubernetes_headlamp_admin_account }}
+        namespace: {{ kubernetes_headlamp_namespace }}
+      ---
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: {{ kubernetes_headlamp_admin_account }}
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: cluster-admin
+      subjects:
+        - kind: ServiceAccount
+          name: {{ kubernetes_headlamp_admin_account }}
+          namespace: {{ kubernetes_headlamp_namespace }}
+    dest: /etc/kubernetes/headlamp-admin.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_headlamp_admin_account_enabled
+
+- name: Apply the Headlamp admin account
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - apply
+      - -f
+      - /etc/kubernetes/headlamp-admin.yaml
+  register: kubernetes_headlamp_admin_apply
+  changed_when: >-
+    'created' in kubernetes_headlamp_admin_apply.stdout
+    or 'configured' in kubernetes_headlamp_admin_apply.stdout
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_headlamp_admin_account_enabled
+
+- name: Remove the Headlamp admin account when it is disabled
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - delete
+      - clusterrolebinding/{{ kubernetes_headlamp_admin_account }}
+      - serviceaccount/{{ kubernetes_headlamp_admin_account }}
+      - --namespace
+      - "{{ kubernetes_headlamp_namespace }}"
+      - --ignore-not-found
+  register: kubernetes_headlamp_admin_delete
+  changed_when: "'deleted' in kubernetes_headlamp_admin_delete.stdout"
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - not kubernetes_headlamp_admin_account_enabled

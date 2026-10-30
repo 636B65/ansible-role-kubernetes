@@ -95,6 +95,7 @@ To run an interactive Ubuntu pod from the image in the local registry, see the
 | [Host firewall](docs/firewall.md) | Optional nftables input filter |
 | [Add and remove nodes](docs/scaling.md) | Scale-out, `examples/remove-node.yml`, replacing failed nodes |
 | [Offline installation](docs/offline.md) | Staging a package and image bundle, installing without internet access |
+| [Headlamp web UI](docs/headlamp.md) | Opening the cluster web UI, sign-in tokens, network exposure |
 | [Troubleshooting](docs/troubleshooting.md) | VIP, etcd, joins, Longhorn, registry, Pod Security, upgrades |
 
 ## Observability
@@ -105,7 +106,10 @@ Relay and UI by default. Open the Hubble UI from a controller with
 `cilium hubble ui`. Set `kubernetes_prometheus_stack_enabled: true` and a
 `kubernetes_grafana_admin_password` of at least 12 characters (from Vault) to
 also install kube-prometheus-stack in the `monitoring` namespace; it needs
-internet access. Run the `observability` tag to apply changes.
+internet access. The [Headlamp](docs/headlamp.md) web UI is installed in the
+`headlamp` namespace; open it with
+`kubectl -n headlamp port-forward service/headlamp 8080:80` and sign in with a
+token. Run the `observability` tag to apply changes.
 
 ## Configure before running
 
@@ -218,7 +222,8 @@ registry; run it while the first control-plane node is available:
 | `firewall` | Configure or remove the nftables host firewall |
 | `hardening` | Write the API server audit, encryption, and Pod Security files on controllers |
 | `etcd_backup` | Install the scheduled etcd backup on controllers |
-| `observability` | Install metrics-server, enable Hubble, and optionally kube-prometheus-stack |
+| `observability` | Install metrics-server, enable Hubble, install Headlamp, and optionally kube-prometheus-stack |
+| `headlamp` | Install or update the Headlamp web UI |
 | `offline_stage` | Stage the offline package and image bundle (only runs when requested) |
 | `upgrade` | Rolling upgrade; needs `serial: 1`, see `examples/upgrade.yml` (only runs when requested) |
 | `remove_node` | Remove `kubernetes_remove_nodes`; see `examples/remove-node.yml` (only runs when requested) |
@@ -245,6 +250,7 @@ All components are pinned in `defaults/main.yml`:
 | `kubernetes_longhorn_version` | `1.13.0` |
 | `kubernetes_metrics_server_version` | `v0.9.0` |
 | `kubernetes_prometheus_stack_version` | `92.14.0` |
+| `kubernetes_headlamp_version` | `0.46.0` |
 
 Set a value to `latest` to resolve the newest stable release at runtime
 instead; this is not reproducible and is refused in offline mode. apt holds

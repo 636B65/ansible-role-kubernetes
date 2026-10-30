@@ -21,6 +21,10 @@ All notable changes to this role are documented here. The format follows
   restore guide.
 - Optional nftables host firewall (`kubernetes_firewall_enabled`).
 - metrics-server, Hubble Relay and UI, and optional kube-prometheus-stack.
+- Headlamp web UI (`headlamp` tag), the maintained successor of the archived
+  Kubernetes Dashboard. It has no cluster permissions of its own, uses a
+  ClusterIP service by default, and comes with an optional `headlamp-admin`
+  sign-in account.
 - Offline bundle staging (`offline_stage` tag) and offline installation mode
   (`kubernetes_offline_mode`).
 - Node removal flow (`examples/remove-node.yml`) with Longhorn replica
