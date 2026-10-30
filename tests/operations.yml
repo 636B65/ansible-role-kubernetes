@@ -160,6 +160,29 @@
           - "'hubble.relay.enabled=true' in kubernetes_cilium_install_values"
           - "'image.useDigest=false' not in kubernetes_cilium_install_values"
 
+    - name: Verify that Longhorn and the registry are on by default and cri-tools is staged
+      ansible.builtin.assert:
+        that:
+          - kubernetes_longhorn_enabled | bool
+          - kubernetes_registry_enabled | bool
+          - "'cri-tools' in kubernetes_offline_packages"
+
+    - name: Verify that the registry cannot be enabled without Longhorn
+      ansible.builtin.assert:
+        that:
+          - kubernetes_longhorn_enabled | bool or not kubernetes_registry_enabled | bool
+      vars:
+        kubernetes_longhorn_enabled: false
+        kubernetes_registry_enabled: false
+
+    - name: Verify that the registry without Longhorn is rejected by the role's check
+      ansible.builtin.assert:
+        that:
+          - not (kubernetes_longhorn_enabled | bool or not kubernetes_registry_enabled | bool)
+      vars:
+        kubernetes_longhorn_enabled: false
+        kubernetes_registry_enabled: true
+
     - name: Verify the offline Cilium install values
       ansible.builtin.assert:
         that:

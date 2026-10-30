@@ -127,6 +127,18 @@
   tags:
     - prerequisites
 
+# The etcd backup script and the troubleshooting docs call crictl, which the
+# kubeadm package no longer pulls in. cri-tools has its own version number.
+- name: Install crictl
+  ansible.builtin.apt:
+    name: cri-tools
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: "'cri-tools' not in ansible_facts.packages"
+  tags:
+    - prerequisites
+
 - name: Report Kubernetes packages that differ from the pinned version
   ansible.builtin.debug:
     msg: >-

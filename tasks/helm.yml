@@ -1,0 +1,65 @@
+---
+# Install Helm on the controllers. Headlamp and the Cilium offline assets use
+# it. main.yml imports this file when the registry or Headlamp is enabled, with
+# tags that cover both, so it runs on its own for either.
+- name: Validate the Helm architecture
+  ansible.builtin.assert:
+    that:
+      - kubernetes_architecture in ['amd64', 'arm64']
+    fail_msg: "Helm is not available for {{ ansible_architecture }}."
+  when: inventory_hostname in groups[kubernetes_control_plane_group]
+
+- name: Create the Helm archive directory on control-plane nodes
+  ansible.builtin.file:
+    path: "{{ kubernetes_offline_assets_directory }}/helm"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: inventory_hostname in groups[kubernetes_control_plane_group]
+
+- name: Download the Helm archive for offline use
+  ansible.builtin.get_url:
+    url: >-
+      https://get.helm.sh/helm-{{ kubernetes_helm_resolved_version }}-linux-{{
+      kubernetes_architecture }}.tar.gz
+    dest: >-
+      {{ kubernetes_offline_assets_directory }}/helm/helm-{{
+      kubernetes_helm_resolved_version }}-linux-{{ kubernetes_architecture }}.tar.gz
+    mode: "0644"
+  when:
+    - inventory_hostname in groups[kubernetes_control_plane_group]
+    - not kubernetes_offline_mode
+
+- name: Create the Helm extraction directory
+  ansible.builtin.file:
+    path: "/tmp/kubernetes-helm-{{ kubernetes_helm_resolved_version }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: inventory_hostname in groups[kubernetes_control_plane_group]
+
+- name: Extract Helm into a versioned temporary directory
+  ansible.builtin.unarchive:
+    src: >-
+      {{ kubernetes_offline_assets_directory }}/helm/helm-{{
+      kubernetes_helm_resolved_version }}-linux-{{ kubernetes_architecture }}.tar.gz
+    dest: "/tmp/kubernetes-helm-{{ kubernetes_helm_resolved_version }}"
+    remote_src: true
+    creates: >-
+      /tmp/kubernetes-helm-{{ kubernetes_helm_resolved_version }}/linux-{{
+      kubernetes_architecture }}/helm
+  when: inventory_hostname in groups[kubernetes_control_plane_group]
+
+- name: Install Helm on control-plane nodes
+  ansible.builtin.copy:
+    src: >-
+      /tmp/kubernetes-helm-{{ kubernetes_helm_resolved_version }}/linux-{{
+      kubernetes_architecture }}/helm
+    dest: /usr/local/bin/helm
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  when: inventory_hostname in groups[kubernetes_control_plane_group]

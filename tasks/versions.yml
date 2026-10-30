@@ -6,7 +6,7 @@
       - kubernetes_cilium_version != 'latest'
       - kubernetes_cilium_cli_version != 'latest'
       - kubernetes_helm_version != 'latest'
-      - kubernetes_longhorn_version != 'latest'
+      - not kubernetes_longhorn_enabled or kubernetes_longhorn_version != 'latest'
       - kubernetes_metrics_server_version != 'latest'
     fail_msg: >-
       Offline mode installs from a staged bundle and cannot resolve "latest".
@@ -65,7 +65,9 @@
     timeout: 30
   register: kubernetes_longhorn_latest_release
   run_once: true
-  when: kubernetes_longhorn_version == 'latest'
+  when:
+    - kubernetes_longhorn_enabled
+    - kubernetes_longhorn_version == 'latest'
 
 - name: Read the latest stable metrics-server release
   ansible.builtin.uri:
@@ -113,7 +115,8 @@
     kubernetes_longhorn_resolved_version: >-
       {{
         (kubernetes_longhorn_latest_release.json.tag_name
-        if kubernetes_longhorn_version == 'latest' else kubernetes_longhorn_version)
+        if kubernetes_longhorn_enabled and kubernetes_longhorn_version == 'latest'
+        else kubernetes_longhorn_version)
         | regex_replace('^v', '')
       }}
     kubernetes_metrics_server_resolved_version: >-
@@ -134,7 +137,7 @@
       - kubernetes_cilium_resolved_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
       - kubernetes_cilium_cli_resolved_version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
       - kubernetes_helm_resolved_version is match('^v3\.[0-9]+\.[0-9]+$')
-      - kubernetes_longhorn_resolved_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+      - not kubernetes_longhorn_enabled or kubernetes_longhorn_resolved_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
       - kubernetes_metrics_server_resolved_version is match('^v[0-9]+\.[0-9]+\.[0-9]+$')
     fail_msg: >-
       One or more component versions are not a stable semantic version. The

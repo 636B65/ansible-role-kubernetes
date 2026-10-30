@@ -14,7 +14,10 @@
       - >-
         groups[kubernetes_worker_group]
         | reject('in', kubernetes_remove_nodes) | list | length
-        >= [kubernetes_longhorn_replica_count | int, kubernetes_registry_replicas | int] | max
+        >= [
+          kubernetes_longhorn_replica_count | int if kubernetes_longhorn_enabled else 1,
+          kubernetes_registry_replicas | int if kubernetes_registry_enabled else 1
+        ] | max
     fail_msg: >-
       Set kubernetes_remove_nodes to inventory hosts of this cluster. The first
       controller ({{ kubernetes_first_controller }}) and the registry staging
@@ -70,7 +73,9 @@
         - kubernetes_remove_longhorn_eviction.rc != 0
         - "'NotFound' not in kubernetes_remove_longhorn_eviction.stderr"
       delegate_to: "{{ kubernetes_first_controller }}"
-      when: kubernetes_remove_node_registered.rc == 0
+      when:
+        - kubernetes_longhorn_enabled
+        - kubernetes_remove_node_registered.rc == 0
 
     - name: Wait until Longhorn has moved every replica off the node
       ansible.builtin.command:
@@ -95,6 +100,7 @@
         | list | length == 0
       delegate_to: "{{ kubernetes_first_controller }}"
       when:
+        - kubernetes_longhorn_enabled
         - kubernetes_remove_node_registered.rc == 0
         - kubernetes_remove_longhorn_eviction.rc | default(1) == 0
 
@@ -178,6 +184,7 @@
       delay: 10
       until: kubernetes_remove_longhorn_node.rc == 0
       delegate_to: "{{ kubernetes_first_controller }}"
+      when: kubernetes_longhorn_enabled
 
     - name: Report the follow-up step
       ansible.builtin.debug:

@@ -47,15 +47,27 @@
     owner: root
     group: root
     mode: "0644"
-  loop:
-    - url: "https://raw.githubusercontent.com/longhorn/longhorn/v{{ kubernetes_longhorn_resolved_version }}/deploy/longhorn.yaml"
-      dest: "{{ kubernetes_longhorn_manifest }}"
-    - url: "https://raw.githubusercontent.com/longhorn/longhorn/v{{ kubernetes_longhorn_resolved_version }}/deploy/longhorn-images.txt"
-      dest: "{{ kubernetes_longhorn_images_list }}"
-    - url: >-
-        https://github.com/kubernetes-sigs/metrics-server/releases/download/{{
-        kubernetes_metrics_server_resolved_version }}/components.yaml
-      dest: "{{ kubernetes_metrics_server_manifest }}"
+  loop: >-
+    {{
+      (
+        [
+          {
+            'url': 'https://raw.githubusercontent.com/longhorn/longhorn/v' ~ kubernetes_longhorn_resolved_version ~ '/deploy/longhorn.yaml',
+            'dest': kubernetes_longhorn_manifest
+          },
+          {
+            'url': 'https://raw.githubusercontent.com/longhorn/longhorn/v' ~ kubernetes_longhorn_resolved_version ~ '/deploy/longhorn-images.txt',
+            'dest': kubernetes_longhorn_images_list
+          }
+        ] if kubernetes_longhorn_enabled else []
+      )
+      + [
+        {
+          'url': 'https://github.com/kubernetes-sigs/metrics-server/releases/download/' ~ kubernetes_metrics_server_resolved_version ~ '/components.yaml',
+          'dest': kubernetes_metrics_server_manifest
+        }
+      ]
+    }}
   loop_control:
     label: "{{ item.dest }}"
 
@@ -120,6 +132,7 @@
   register: kubernetes_offline_longhorn_images
   run_once: true
   delegate_to: "{{ kubernetes_first_controller }}"
+  when: kubernetes_longhorn_enabled
 
 - name: Collect every image reference for the offline bundle
   ansible.builtin.set_fact:
@@ -132,9 +145,12 @@
             kubernetes_offline_containerd_config.content | b64decode
             | regex_findall('(?m)^\s*sandbox(?:_image)?\s*=\s*["\']([^"\']+)["\']')
           )
-          + (kubernetes_offline_longhorn_images.content | b64decode).splitlines()
-          + (kubernetes_registry_images | map(attribute='source') | list)
-          + [kubernetes_registry_image]
+          + (
+            (kubernetes_offline_longhorn_images.content | b64decode).splitlines()
+            if kubernetes_longhorn_enabled else []
+          )
+          + (kubernetes_registry_images | map(attribute='source') | list if kubernetes_registry_enabled else [])
+          + ([kubernetes_registry_image] if kubernetes_registry_enabled else [])
           + ([kubernetes_headlamp_image] if kubernetes_headlamp_enabled else [])
           + kubernetes_offline_extra_images
         )
@@ -185,7 +201,11 @@
         kubernetes_cilium_version: "{{ kubernetes_cilium_resolved_version }}"
         kubernetes_cilium_cli_version: "{{ kubernetes_cilium_cli_resolved_version }}"
         kubernetes_helm_version: "{{ kubernetes_helm_resolved_version }}"
+        kubernetes_longhorn_enabled: {{ kubernetes_longhorn_enabled | bool | lower }}
+        kubernetes_registry_enabled: {{ kubernetes_registry_enabled | bool | lower }}
+        {% if kubernetes_longhorn_enabled %}
         kubernetes_longhorn_version: "{{ kubernetes_longhorn_resolved_version }}"
+        {% endif %}
         kubernetes_metrics_server_version: "{{ kubernetes_metrics_server_resolved_version }}"
         architecture: "{{ kubernetes_architecture }}"
         distribution: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
