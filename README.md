@@ -8,6 +8,9 @@ upgrades, scheduled etcd backups, API server hardening, an optional host
 firewall, observability add-ons, node removal, and an offline installation
 mode.
 
+New here? Follow the [quick start](docs/quickstart.md) for an online or an
+offline installation.
+
 > **Before you run this role:** replace all `changeme` values, configure your
 > inventory and API virtual IP, review the network requirements, and keep
 > credentials in Ansible Vault. Do not commit real passwords or vault secrets.
@@ -89,6 +92,7 @@ To run an interactive Ubuntu pod from the image in the local registry, see the
 
 | Guide | Covers |
 | --- | --- |
+| [Quick start](docs/quickstart.md) | First installation, online or offline |
 | [Upgrade Kubernetes](docs/upgrade.md) | Rolling upgrades with `examples/upgrade.yml`, Cilium and Longhorn upgrades |
 | [API server hardening](docs/hardening.md) | Audit logging, encryption of Secrets at rest, Pod Security admission, rollout to existing clusters |
 | [etcd backup and restore](docs/etcd-backup-restore.md) | Scheduled snapshots and a full restore procedure |

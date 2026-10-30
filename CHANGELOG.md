@@ -6,6 +6,11 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Quick start guide for online and offline installations
+  (`docs/quickstart.md`).
+
 ## [2.0.0] - 2026-10-30
 
 This is a major release: it changes defaults that affect running clusters.
