@@ -24,7 +24,7 @@ for node sizes.
 1. **Get the role** at a released version:
 
    ```sh
-   git clone --branch v2.0.0 https://github.com/636B65/ansible-role-kubernetes.git
+   git clone --branch v2.0.1 https://github.com/636B65/ansible-role-kubernetes.git
    cd ansible-role-kubernetes
    ansible-galaxy role install . --roles-path ./roles
    ```

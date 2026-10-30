@@ -6,10 +6,16 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-10-30
+
 ### Added
 
 - Quick start guide for online and offline installations
   (`docs/quickstart.md`).
+
+### Changed
+
+- CI uses `actions/checkout` v7 and `actions/setup-python` v7.
 
 ## [2.0.0] - 2026-10-30
 
@@ -94,6 +100,7 @@ Read the upgrade notes below before running it against an existing cluster.
   registry on replicated Longhorn storage with offline staging of the Cilium
   chart and images.
 
-[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/636B65/ansible-role-kubernetes/releases/tag/v1.0.0
