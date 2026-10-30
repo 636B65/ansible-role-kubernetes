@@ -37,6 +37,8 @@ Read the upgrade notes below before running it against an existing cluster.
 - Role argument specifications in `meta/argument_specs.yml`.
 - Renovate configuration for the pinned versions and Dependabot for GitHub
   Actions.
+- Automatic release tagging: CI on `main` creates the tag and GitHub Release
+  for the newest version in `CHANGELOG.md`.
 - Template tests in `tests/operations.yml`, `nft` and `shellcheck` checks in
   CI, and `tests/idempotence.sh` for lab clusters.
 - Guides for upgrades, hardening, etcd backup and restore, the firewall,

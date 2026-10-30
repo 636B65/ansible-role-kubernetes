@@ -274,10 +274,12 @@ The role follows [Semantic Versioning](https://semver.org/):
   pinned components.
 
 Record every change under `Unreleased` in [CHANGELOG.md](CHANGELOG.md). To
-release, move those entries under a new version heading, then push a version
-tag such as `v1.0.0` to run the CI checks and publish a GitHub Release. The
-release workflow requires the repository's standard `GITHUB_TOKEN`
-permission to create releases.
+release, move those entries under a new version heading such as
+`## [2.1.0] - 2026-11-15`, add its comparison link at the bottom, and merge to
+`main`. When CI passes on `main`, the `tag-release` job creates the `v2.1.0`
+tag and the GitHub Release, with the changelog section as release notes. It
+does nothing when the newest version is already tagged. Pushing a version
+tag by hand still works: the `release` job then publishes the release.
 
 ### Tests
 
