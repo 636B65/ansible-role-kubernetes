@@ -6,6 +6,11 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-30
+
+This is a major release: the next run can rename machines and move node
+services to the inventory addresses. Read the upgrade notes first.
+
 ### Added
 
 - `kubernetes_manage_hostname` (default `true`) sets each machine's hostname
@@ -156,7 +161,8 @@ Read the upgrade notes below before running it against an existing cluster.
   registry on replicated Longhorn storage with offline staging of the Cilium
   chart and images.
 
-[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.1.1...v3.0.0
 [2.1.1]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.0.0...v2.0.1
