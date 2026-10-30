@@ -65,7 +65,8 @@ same CPU architecture, and the same pinned versions as the offline cluster.
      chart, with tag-only image references so the imported images match,
    - applies the staged Longhorn and metrics-server manifests and installs
      Headlamp from the staged chart,
-   - fills the internal registry from the image archives.
+   - fills the internal registry from the image archives and builds the
+     images in `kubernetes_registry_builds` from base images in it.
 
 kube-prometheus-stack is installed from its upstream Helm repository and is
 not available in offline mode.

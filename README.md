@@ -99,6 +99,7 @@ To run an interactive Ubuntu pod from the image in the local registry, see the
 | [Host firewall](docs/firewall.md) | Optional nftables input filter |
 | [Add and remove nodes](docs/scaling.md) | Scale-out, `examples/remove-node.yml`, replacing failed nodes |
 | [Offline installation](docs/offline.md) | Staging a package and image bundle, installing without internet access |
+| [Build your own images](docs/building-images.md) | Skeleton Dockerfiles built into the internal registry |
 | [Headlamp web UI](docs/headlamp.md) | Opening the cluster web UI, sign-in tokens, network exposure |
 | [Troubleshooting](docs/troubleshooting.md) | VIP, etcd, joins, Longhorn, registry, Pod Security, upgrades |
 
@@ -175,7 +176,9 @@ its disk is already lost, data that existed only there cannot be recovered by
 this migration.
 
 The registry is exposed as a plain-HTTP NodePort (`30500`) without
-authentication. Do not expose it outside a trusted network.
+authentication, so every image in it can be pulled by anyone who reaches that
+port. Do not expose it outside a trusted network. The role can also build your
+own images into it; see [Build your own images](docs/building-images.md).
 
 ## Install and run
 
@@ -221,6 +224,7 @@ registry; run it while the first control-plane node is available:
 | `registry_deploy` | Install Longhorn, migrate existing data if needed, and deploy two registry replicas |
 | `registry_runtime` | Configure containerd for the registry |
 | `registry_images` | Copy configured, NGINX, and active Cilium chart images into the registry; stage the chart and tools on controllers |
+| `registry_builds` | Build the images in `kubernetes_registry_builds` with Buildah and push them to the internal registry |
 | `cilium_offline` | Stage the active Cilium chart and rendered images, plus Helm and Cilium CLI, for offline use |
 | `registry` | Run Longhorn installation and all registry tasks |
 | `firewall` | Configure or remove the nftables host firewall |

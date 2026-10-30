@@ -162,6 +162,41 @@ argument_specs:
         type: bool
         description: Copy images even when the destination tag exists.
         default: false
+      kubernetes_registry_builds_enabled:
+        type: bool
+        description: Build the images in kubernetes_registry_builds into the internal registry.
+        default: true
+      kubernetes_registry_builds:
+        type: list
+        description: Images built with Buildah on the registry node and pushed to the internal registry.
+        elements: dict
+        options:
+          name:
+            type: str
+            description: Repository name in the internal registry.
+            required: true
+          tag:
+            type: str
+            description: Image tag.
+            required: true
+          context:
+            type: path
+            description: Directory on the Ansible machine that holds the Dockerfile and build files.
+            required: true
+          build_args:
+            type: dict
+            description: Additional build arguments.
+        default:
+          - name: ubuntu-base
+            tag: 1.0.0
+            context: '{{ role_path }}/files/images/ubuntu-base'
+          - name: nginx-static
+            tag: 1.0.0
+            context: '{{ role_path }}/files/images/nginx-static'
+      kubernetes_registry_builds_force:
+        type: bool
+        description: Rebuild and push every image even when nothing changed.
+        default: false
       kubernetes_offline_assets_directory:
         type: path
         description: Directory that holds offline assets and the offline bundle.

@@ -151,6 +151,7 @@ kubernetes_offline_packages:
   - open-iscsi
   - nfs-common
   - skopeo
+  - buildah
   - nftables
   - python3-apt
   - apt-utils
@@ -219,3 +220,6 @@ kubernetes_headlamp_values:
       | combine({'nodePort': kubernetes_headlamp_node_port | int}
         if kubernetes_headlamp_service_type == 'NodePort' else {})
     }}
+
+kubernetes_registry_address: "{{ kubernetes_registry_hostname }}:{{ kubernetes_registry_node_port }}"
+kubernetes_registry_builds_directory: /opt/kubernetes-builds

@@ -21,6 +21,15 @@
         kubernetes_api_vip: 192.0.2.10
         kubernetes_resolved_version: 1.36.5
         kubernetes_secrets_encryption_key_value: "{{ 'a' * 43 }}="
+        # The defaults point at role_path, which only exists inside a role, so
+        # the test lists the same skeletons by their path in the repository.
+        kubernetes_registry_builds:
+          - name: ubuntu-base
+            tag: "1.0.0"
+            context: "{{ playbook_dir | dirname }}/files/images/ubuntu-base"
+          - name: nginx-static
+            tag: "1.0.0"
+            context: "{{ playbook_dir | dirname }}/files/images/nginx-static"
 
     - name: Validate the role defaults against the argument specification
       ansible.builtin.validate_argument_spec:
@@ -213,3 +222,22 @@
           - "kubernetes_headlamp_values.service == {'type': 'NodePort', 'nodePort': 30443}"
       vars:
         kubernetes_headlamp_service_type: NodePort
+
+    - name: Read the skeleton Dockerfiles
+      ansible.builtin.set_fact:
+        test_dockerfiles: "{{ test_dockerfiles | default({}) | combine({item.name: lookup('file', item.context ~ '/Dockerfile')}) }}"
+      loop: "{{ kubernetes_registry_builds }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Verify the skeleton images build from the internal registry
+      ansible.builtin.assert:
+        that:
+          - test_dockerfiles | length == 2
+          - test_dockerfiles.values() | select('search', '(?m)^ARG REGISTRY=registry.k8s.local:30500$') | list | length == 2
+          - test_dockerfiles.values() | select('search', '(?m)^FROM \$\{REGISTRY\}/') | list | length == 2
+          - "'USER 10001:10001' in test_dockerfiles['ubuntu-base']"
+          - kubernetes_registry_address == 'registry.k8s.local:30500'
+          - >-
+            kubernetes_registry_images | map(attribute='destination') | list
+            | intersect(['ubuntu:26.04', 'nginx:1.30.6']) | length == 2

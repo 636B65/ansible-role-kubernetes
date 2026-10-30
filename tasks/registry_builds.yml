@@ -1,0 +1,104 @@
+---
+- name: Validate the image build definitions
+  ansible.builtin.assert:
+    that:
+      - item.name is match('^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$')
+      - item.tag | string is match('^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$')
+      - item.context is defined
+    fail_msg: >-
+      Each entry in kubernetes_registry_builds needs a lowercase repository
+      name, a valid tag, and a context directory with a Dockerfile.
+    quiet: true
+  loop: "{{ kubernetes_registry_builds }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+  run_once: true
+
+- name: Install Buildah for building images on the registry node
+  ansible.builtin.apt:
+    name: buildah
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: inventory_hostname == kubernetes_registry_node
+
+- name: Copy the image build contexts to the registry node
+  ansible.builtin.copy:
+    src: "{{ item.context }}/"
+    dest: "{{ kubernetes_registry_builds_directory }}/{{ item.name }}/"
+    owner: root
+    group: root
+    mode: "0644"
+    directory_mode: "0755"
+  loop: "{{ kubernetes_registry_builds }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: kubernetes_registry_build_contexts
+  when: inventory_hostname == kubernetes_registry_node
+
+- name: Check which built images are already in the internal registry
+  ansible.builtin.uri:
+    url: "http://{{ kubernetes_registry_address }}/v2/{{ item.name }}/manifests/{{ item.tag }}"
+    method: HEAD
+    headers:
+      Accept: >-
+        application/vnd.oci.image.manifest.v1+json,
+        application/vnd.docker.distribution.manifest.v2+json,
+        application/vnd.oci.image.index.v1+json,
+        application/vnd.docker.distribution.manifest.list.v2+json
+    status_code:
+      - 200
+      - 404
+    return_content: false
+    timeout: 20
+  loop: "{{ kubernetes_registry_builds }}"
+  loop_control:
+    label: "{{ item.name }}:{{ item.tag }}"
+  register: kubernetes_registry_built_images
+  when: inventory_hostname == kubernetes_registry_node
+
+- name: Build and push new or changed images
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail &&
+      buildah build --tls-verify=false --layers
+      --build-arg {{ ('REGISTRY=' ~ kubernetes_registry_address) | quote }}
+      {% for key, value in (item.0.build_args | default({})).items() %}
+      --build-arg {{ (key ~ '=' ~ value) | quote }}
+      {% endfor %}
+      --tag {{ (kubernetes_registry_address ~ '/' ~ item.0.name ~ ':' ~ item.0.tag) | quote }}
+      {{ (kubernetes_registry_builds_directory ~ '/' ~ item.0.name) | quote }}
+      && buildah push --tls-verify=false
+      {{ (kubernetes_registry_address ~ '/' ~ item.0.name ~ ':' ~ item.0.tag) | quote }}
+    executable: /bin/bash
+  loop: >-
+    {{
+      kubernetes_registry_builds
+      | zip(kubernetes_registry_build_contexts.results | default([]),
+            kubernetes_registry_built_images.results | default([]))
+      | list
+    }}
+  loop_control:
+    label: "{{ item.0.name }}:{{ item.0.tag }}"
+  changed_when: true
+  when:
+    - inventory_hostname == kubernetes_registry_node
+    - item.1.changed or item.2.status == 404 or kubernetes_registry_builds_force
+
+- name: Verify the built images in the internal registry
+  ansible.builtin.uri:
+    url: "http://{{ kubernetes_registry_address }}/v2/{{ item.name }}/manifests/{{ item.tag }}"
+    method: HEAD
+    headers:
+      Accept: >-
+        application/vnd.oci.image.manifest.v1+json,
+        application/vnd.docker.distribution.manifest.v2+json,
+        application/vnd.oci.image.index.v1+json,
+        application/vnd.docker.distribution.manifest.list.v2+json
+    status_code: 200
+    return_content: false
+    timeout: 20
+  loop: "{{ kubernetes_registry_builds }}"
+  loop_control:
+    label: "{{ item.name }}:{{ item.tag }}"
+  when: inventory_hostname == kubernetes_registry_node

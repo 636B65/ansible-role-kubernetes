@@ -61,6 +61,22 @@ kubernetes_registry_images:
 # internal registry. Leave false for pinned, immutable tags.
 kubernetes_registry_images_force_refresh: false
 
+# Images built from Dockerfiles on the registry node and pushed to the
+# internal registry, where every node can pull them without credentials.
+# "context" is a directory on the Ansible machine that holds a Dockerfile.
+# The skeletons in files/images are starting points; see
+# docs/building-images.md.
+kubernetes_registry_builds_enabled: true
+kubernetes_registry_builds:
+  - name: ubuntu-base
+    tag: "1.0.0"
+    context: "{{ role_path }}/files/images/ubuntu-base"
+  - name: nginx-static
+    tag: "1.0.0"
+    context: "{{ role_path }}/files/images/nginx-static"
+# Rebuild and push every image even when its context and tag are unchanged.
+kubernetes_registry_builds_force: false
+
 kubernetes_offline_assets_directory: /opt/kubernetes-offline
 kubernetes_helm_releases_url: https://api.github.com/repos/helm/helm/releases?per_page=100
 

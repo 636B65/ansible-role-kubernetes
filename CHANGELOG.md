@@ -6,6 +6,13 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Skeleton Dockerfiles (`ubuntu-base`, `nginx-static`) that the
+  `registry_builds` tag builds with Buildah on the registry node and pushes to
+  the internal registry, where every node can pull them without credentials.
+  Add your own images with `kubernetes_registry_builds`.
+
 ## [2.0.1] - 2026-10-30
 
 ### Added

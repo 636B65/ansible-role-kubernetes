@@ -172,6 +172,13 @@
     - registry
     - registry_images
 
+- name: Build the configured images into the internal registry
+  ansible.builtin.import_tasks: registry_builds.yml
+  when: kubernetes_registry_builds_enabled
+  tags:
+    - registry
+    - registry_builds
+
 - name: Stage Cilium LoadBalancer assets for offline use
   ansible.builtin.import_tasks: cilium_offline.yml
   tags:
