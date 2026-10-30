@@ -100,6 +100,7 @@ To run an interactive Ubuntu pod from the image in the local registry, see the
 | [Add and remove nodes](docs/scaling.md) | Scale-out, `examples/remove-node.yml`, replacing failed nodes |
 | [Offline installation](docs/offline.md) | Staging a package and image bundle, installing without internet access |
 | [Build your own images](docs/building-images.md) | Skeleton Dockerfiles built into the internal registry |
+| [Import your own images](docs/importing-images.md) | Bringing images from other registries, image files, or a workstation into the internal registry |
 | [Headlamp web UI](docs/headlamp.md) | Opening the cluster web UI, sign-in tokens, network exposure |
 | [Troubleshooting](docs/troubleshooting.md) | VIP, etcd, joins, Longhorn, registry, Pod Security, upgrades |
 

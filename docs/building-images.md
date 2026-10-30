@@ -11,6 +11,9 @@ Two skeleton images in `files/images` are built by default:
 | `ubuntu-base:1.0.0` | `ubuntu:26.04` | Tools, jobs, and debugging; runs as the non-root user `app` (UID 10001) |
 | `nginx-static:1.0.0` | `nginx:1.30.6` | A static website from the files in `html/` |
 
+To bring in an image that was built somewhere else, from another registry or
+an image file, see [Import your own images](importing-images.md).
+
 ## How a build works
 
 For each entry in `kubernetes_registry_builds` the `registry_builds` tag:

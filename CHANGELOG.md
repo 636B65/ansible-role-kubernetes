@@ -12,6 +12,8 @@ All notable changes to this role are documented here. The format follows
   `registry_builds` tag builds with Buildah on the registry node and pushes to
   the internal registry, where every node can pull them without credentials.
   Add your own images with `kubernetes_registry_builds`.
+- Guide for importing images built elsewhere into the internal registry
+  (`docs/importing-images.md`).
 
 ## [2.0.1] - 2026-10-30
 
