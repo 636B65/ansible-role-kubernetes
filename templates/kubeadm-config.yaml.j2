@@ -2,7 +2,7 @@
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
 localAPIEndpoint:
-  advertiseAddress: {{ ansible_default_ipv4.address }}
+  advertiseAddress: {{ kubernetes_node_address }}
   bindPort: {{ kubernetes_apiserver_port }}
 nodeRegistration:
   name: {{ inventory_hostname }}

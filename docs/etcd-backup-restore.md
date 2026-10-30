@@ -59,8 +59,9 @@ it only when the cluster cannot recover otherwise, for example after losing
 etcd quorum. If a single controller fails while the others keep quorum,
 remove and re-add that controller instead (see [Scaling](scaling.md)).
 
-The steps assume a three-controller cluster `kube-cp01`, `kube-cp02`,
-`kube-cp03` with the addresses from `examples/inventory.yml`. Use one
+Node names and addresses below are placeholders: use the host names from
+your inventory (they are also the etcd member names) and each controller's
+cluster address (`kubernetes_node_ip`, or `ansible_host`). Use one
 snapshot for all members.
 
 1. **Stop the control plane on every controller.** Moving the static pod
@@ -87,9 +88,10 @@ snapshot for all members.
    Run this on each controller with its own name and address:
 
    ```sh
-   NAME=kube-cp01          # this controller's node name
-   IP=192.0.2.11           # this controller's address
-   CLUSTER=kube-cp01=https://192.0.2.11:2380,kube-cp02=https://192.0.2.12:2380,kube-cp03=https://192.0.2.13:2380
+   NAME=<controller>       # this controller's inventory host name
+   IP=192.0.2.11           # this controller's cluster address
+   # Every controller as <inventory name>=https://<cluster address>:2380:
+   CLUSTER=<controller-1>=https://192.0.2.11:2380,<controller-2>=https://192.0.2.12:2380,<controller-3>=https://192.0.2.13:2380
    ETCD_IMAGE="$(sudo awk '/image:/ {print $2}' /etc/kubernetes/manifests-stopped/etcd.yaml)"
 
    sudo mv /var/lib/etcd "/var/lib/etcd.before-restore-$(date +%s)"

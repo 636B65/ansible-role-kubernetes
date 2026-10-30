@@ -14,6 +14,15 @@ argument_specs:
         type: str
         description: Inventory group with the worker nodes.
         default: k8s_workers
+      kubernetes_manage_hostname:
+        type: bool
+        description: Set each machine hostname to its inventory host name.
+        default: true
+      kubernetes_node_ip:
+        type: str
+        description: Cluster IPv4 address of the node; empty uses ansible_host. Set it per host in the
+          inventory.
+        default: ''
       kubernetes_api_vip:
         type: str
         description: Free IPv4 address that Keepalived assigns to the active controller for the Kubernetes
@@ -25,8 +34,9 @@ argument_specs:
         default: 24
       kubernetes_api_vip_interface:
         type: str
-        description: Controller network interface that carries the API virtual IP.
-        default: '{{ ansible_default_ipv4.interface }}'
+        description: Controller network interface that carries the API virtual IP; defaults to the interface
+          with the node address.
+        default: '{{ kubernetes_node_interface }}'
       kubernetes_api_vip_router_id:
         type: int
         description: VRRP virtual router ID used by Keepalived.

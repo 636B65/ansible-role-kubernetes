@@ -6,6 +6,36 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `kubernetes_manage_hostname` (default `true`) sets each machine's hostname
+  to its inventory host name.
+- `kubernetes_node_ip` sets a node's cluster address per host when it differs
+  from `ansible_host`, for example when Ansible connects over a management
+  network or a DNS name.
+- Preflight checks that inventory names are valid node names, that cluster
+  addresses are unique, and that each address is configured on its node.
+
+### Changed
+
+- Every component uses the node's cluster address from the inventory instead
+  of the address on the default route: kubelet (`--node-ip`), the API server
+  and etcd on the first and joining controllers, HAProxy backends, Keepalived
+  peers, the registry host entry, and the firewall. The API VIP defaults to
+  the interface that holds that address.
+- etcd backup files are named after the inventory host name.
+- The docs and architecture diagram no longer present `kube-cp01`-style names
+  as fixed; they are examples, and the inventory decides the names.
+
+### Upgrade notes
+
+- On an existing cluster, check that each node's `ansible_host` (or
+  `kubernetes_node_ip`) is the address the cluster already uses. If a node's
+  default-route address differs, the next run moves kubelet, HAProxy, and
+  Keepalived to the inventory address.
+- Machine hostnames change to the inventory names on the next run. Set
+  `kubernetes_manage_hostname: false` to keep the current hostnames.
+
 ## [2.1.1] - 2026-10-30
 
 ### Changed

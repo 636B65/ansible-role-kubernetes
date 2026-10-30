@@ -34,8 +34,10 @@ of them fails.
 
 ```sh
 ansible-playbook -i examples/inventory.yml examples/remove-node.yml \
-  -e '{"kubernetes_remove_nodes": ["kube-wl03"]}' --ask-vault-pass
+  -e '{"kubernetes_remove_nodes": ["<worker name>"]}' --ask-vault-pass
 ```
+
+Use the host names exactly as they appear in your inventory.
 
 For each node it:
 

@@ -119,10 +119,31 @@ token. Run the `observability` tag to apply changes.
 
 ## Configure before running
 
-1. **Inventory:** Copy `examples/inventory.yml` to your own inventory and
-   replace every documentation-only address (`192.0.2.x`) with the real
-   reachable IPv4 address of each host. Keep the hostnames consistent with the
-   control-plane and worker groups.
+1. **Inventory:** Copy `examples/inventory.yml` to your own inventory, name
+   the hosts as you want the nodes to be called, and replace every
+   documentation-only address (`192.0.2.x`) with the real IPv4 address of
+   each host. The `kube-cp01`/`kube-wl01` names in the examples, docs, and
+   diagram are placeholders; the role uses whatever the inventory says:
+
+   - Each inventory host name becomes the node's Kubernetes, etcd, and
+     Longhorn name, the machine's hostname (`kubernetes_manage_hostname`),
+     and its `/etc/hosts` entry on every node. Use lowercase letters, digits,
+     hyphens, and dots.
+   - Each node's cluster address is its `ansible_host`. If Ansible reaches a
+     host through another name or network, set `kubernetes_node_ip` for that
+     host to the address the other nodes use. kubelet, the API server, etcd,
+     HAProxy, Keepalived, the registry, and the firewall all use that
+     address, and the API VIP goes on the interface that holds it.
+
+   ```yaml
+   k8s_workers:
+     hosts:
+       worker-a:
+         ansible_host: worker-a.mgmt.example.com
+         kubernetes_node_ip: 10.20.0.31
+   ```
+
+   The first host in `k8s_control_plane` initializes the cluster.
 2. **SSH and sudo credentials:** Copy
    `examples/group_vars/all.yml.example` to `examples/group_vars/all.yml`.
    Replace `changeme` with the SSH username and credentials for your hosts.

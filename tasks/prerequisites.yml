@@ -179,6 +179,19 @@
   tags:
     - prerequisites
 
+- name: Register kubelet with the node's cluster address
+  ansible.builtin.lineinfile:
+    path: /etc/default/kubelet
+    regexp: '^KUBELET_EXTRA_ARGS='
+    line: "KUBELET_EXTRA_ARGS=--node-ip={{ kubernetes_node_address }}"
+    create: true
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart kubelet
+  tags:
+    - prerequisites
+
 - name: Ensure containerd and kubelet are enabled and running
   ansible.builtin.service:
     name: "{{ item }}"

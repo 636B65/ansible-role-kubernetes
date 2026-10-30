@@ -104,7 +104,7 @@
       ansible.builtin.assert:
         that:
           - "'policy drop;' in test_firewall"
-          - "'elements = { 192.0.2.11, 192.0.2.21, 192.0.2.22, 192.0.2.23 }' in test_firewall"
+          - "'elements = { 192.0.2.11, 192.0.2.21, 192.0.2.22, 198.51.100.23 }' in test_firewall"
           - "'ip saddr @api_networks ip daddr 192.0.2.10 tcp dport 8443 accept' in test_firewall"
           - "'ip saddr @admin_networks tcp dport 22 accept' in test_firewall"
           - "'delete table inet kubernetes_host_firewall' in test_firewall"
@@ -241,3 +241,27 @@
           - >-
             kubernetes_registry_images | map(attribute='destination') | list
             | intersect(['ubuntu:26.04', 'nginx:1.30.6']) | length == 2
+
+    - name: Render the load balancer templates
+      ansible.builtin.template:
+        src: "{{ role_root }}/templates/{{ item }}.j2"
+        dest: "{{ test_output_dir }}/{{ item }}"
+        mode: "0600"
+      loop:
+        - haproxy.cfg
+        - keepalived.conf
+
+    - name: Verify that node names and addresses come from the inventory
+      ansible.builtin.assert:
+        that:
+          - >-
+            kubernetes_node_addresses == {
+              'test-cp': '192.0.2.11', 'test-worker01': '192.0.2.21',
+              'test-worker02': '192.0.2.22', 'test-worker03': '198.51.100.23'}
+          - kubernetes_node_address == '192.0.2.11'
+          - kubernetes_node_interface == 'eth0'
+          - kubernetes_api_vip_interface == 'eth0'
+          - "'server test-cp 192.0.2.11:6443 check' in lookup('file', test_output_dir ~ '/haproxy.cfg')"
+          - "'unicast_src_ip 192.0.2.11' in lookup('file', test_output_dir ~ '/keepalived.conf')"
+          - "'interface eth0' in lookup('file', test_output_dir ~ '/keepalived.conf')"
+          - "'host=test-cp' in lookup('file', test_output_dir ~ '/kubernetes-etcd-backup.sh')"

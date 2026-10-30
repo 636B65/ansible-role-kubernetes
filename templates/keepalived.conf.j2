@@ -15,10 +15,10 @@ vrrp_instance KUBERNETES_API {
         auth_pass {{ kubernetes_keepalived_auth_pass }}
     }
 
-    unicast_src_ip {{ ansible_default_ipv4.address }}
+    unicast_src_ip {{ kubernetes_node_address }}
     unicast_peer {
 {% for controller in groups[kubernetes_control_plane_group] if controller != inventory_hostname %}
-        {{ hostvars[controller].ansible_default_ipv4.address }}
+        {{ kubernetes_node_addresses[controller] }}
 {% endfor %}
     }
 

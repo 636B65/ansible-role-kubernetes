@@ -12,4 +12,6 @@ all:
         test-worker02:
           ansible_host: 192.0.2.22
         test-worker03:
-          ansible_host: 192.0.2.23
+          ansible_host: test-worker03.mgmt.example
+          # Cluster traffic uses a different network than the SSH connection.
+          kubernetes_node_ip: 198.51.100.23

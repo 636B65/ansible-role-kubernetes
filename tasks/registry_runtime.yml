@@ -3,7 +3,7 @@
   ansible.builtin.blockinfile:
     path: "{{ kubernetes_hosts_file_path }}"
     marker: "# {mark} ANSIBLE KUBERNETES REGISTRY HOST"
-    block: "{{ ansible_default_ipv4.address }} {{ kubernetes_registry_hostname }}"
+    block: "{{ kubernetes_node_address }} {{ kubernetes_registry_hostname }}"
     owner: root
     group: root
     mode: "0644"

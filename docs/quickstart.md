@@ -29,10 +29,13 @@ for node sizes.
    ansible-galaxy role install . --roles-path ./roles
    ```
 
-2. **Describe your nodes** in `examples/inventory.yml`: real host names in
-   `k8s_control_plane` and `k8s_workers`, each with its IPv4 address as
-   `ansible_host`. The first controller in the list is the one the cluster
-   is built from.
+2. **Describe your nodes** in `examples/inventory.yml`: your own host names
+   in `k8s_control_plane` and `k8s_workers`, each with its IPv4 address as
+   `ansible_host`. The `kube-*` names are only examples: the inventory names
+   become the node names and hostnames. If Ansible connects to a host over
+   another name or network, also set `kubernetes_node_ip` to the address the
+   nodes use to reach each other. The first controller in the list is the
+   one the cluster is built from.
 
 3. **Add SSH and sudo credentials** and encrypt them:
 

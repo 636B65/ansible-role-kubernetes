@@ -20,7 +20,7 @@ backend kubernetes_control_planes
     balance roundrobin
     option tcp-check
 {% for controller in groups[kubernetes_control_plane_group] %}
-    server {{ controller }} {{ hostvars[controller].ansible_default_ipv4.address }}:{{ kubernetes_apiserver_port }} check
+    server {{ controller }} {{ kubernetes_node_addresses[controller] }}:{{ kubernetes_apiserver_port }} check
 {% endfor %}
 
 listen haproxy_stats

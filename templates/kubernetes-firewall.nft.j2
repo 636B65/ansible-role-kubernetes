@@ -9,7 +9,7 @@ delete table inet kubernetes_host_firewall
 table inet kubernetes_host_firewall {
     set cluster_nodes {
         type ipv4_addr
-        elements = { {{ kubernetes_cluster_hosts | map('extract', hostvars, 'ansible_host') | unique | join(', ') }} }
+        elements = { {{ kubernetes_node_addresses.values() | unique | join(', ') }} }
     }
 {% for set_name, networks in [('admin_networks', kubernetes_firewall_admin_networks), ('api_networks', kubernetes_firewall_api_networks), ('nodeport_networks', kubernetes_firewall_nodeport_networks)] if networks | length > 0 %}
 

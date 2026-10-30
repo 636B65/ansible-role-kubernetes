@@ -76,11 +76,12 @@ This works without internet access, for example on an offline cluster.
    podman save --output my-app.tar localhost/my-app:1.0.0
    ```
 
-2. **Copy the file to the registry node.** That is the first control-plane
-   node unless you changed `kubernetes_registry_node`:
+2. **Copy the file to the registry node.** That is the first host in the
+   inventory's `k8s_control_plane` group unless you changed
+   `kubernetes_registry_node`:
 
    ```sh
-   scp my-app.tar kube-cp01:/tmp/
+   scp my-app.tar <first-controller>:/tmp/
    ```
 
 3. **Push it into the registry** on that node. Skopeo is installed there by

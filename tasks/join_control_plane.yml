@@ -11,6 +11,7 @@
     {{ hostvars[groups[kubernetes_control_plane_group][0]].kubernetes_join_command_for_cluster }}
     --control-plane
     --certificate-key {{ hostvars[groups[kubernetes_control_plane_group][0]].kubernetes_control_plane_certificate_key }}
+    --apiserver-advertise-address {{ kubernetes_node_address }}
     --cri-socket unix:///run/containerd/containerd.sock
     --node-name {{ inventory_hostname }}
   no_log: true

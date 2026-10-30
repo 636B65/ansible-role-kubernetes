@@ -9,7 +9,7 @@ backup_directory={{ kubernetes_etcd_backup_directory | quote }}
 retention_days={{ kubernetes_etcd_backup_retention_days | int }}
 runtime_endpoint={{ kubernetes_cri_socket | quote }}
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-host="$(hostname -s)"
+host={{ inventory_hostname | quote }}
 partial_name=".kubernetes-etcd-backup.db.part"
 
 mkdir -p "${backup_directory}"

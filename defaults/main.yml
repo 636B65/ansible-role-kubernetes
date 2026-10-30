@@ -2,9 +2,19 @@
 kubernetes_control_plane_group: k8s_control_plane
 kubernetes_worker_group: k8s_workers
 
+# Node names and addresses come from the inventory. Each node's Kubernetes,
+# etcd, and Longhorn name is its inventory host name, and the role also sets
+# the machine's hostname to it. Its cluster address is ansible_host, unless
+# the host sets kubernetes_node_ip (for example when Ansible connects over a
+# different network or name).
+kubernetes_manage_hostname: true
+kubernetes_node_ip: ""
+
 kubernetes_api_vip: "192.168.1.100"
 kubernetes_api_vip_prefix: 24
-kubernetes_api_vip_interface: "{{ ansible_default_ipv4.interface }}"
+# Interface that carries the API VIP. Defaults to the interface that holds the
+# node's cluster address (see kubernetes_node_ip).
+kubernetes_api_vip_interface: "{{ kubernetes_node_interface }}"
 kubernetes_api_vip_router_id: 51
 kubernetes_keepalived_auth_pass: "changeme"
 
