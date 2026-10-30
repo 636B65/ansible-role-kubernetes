@@ -6,6 +6,21 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-10-30
+
+### Changed
+
+- The architecture diagram (`docs/architecture.svg` and its draw.io source)
+  shows the current role: pinned upstream sources, the offline bundle, API
+  server hardening and etcd backups on the controllers, the image builds in
+  the internal registry, and the cluster add-ons (metrics-server, Hubble,
+  Headlamp, optional kube-prometheus-stack).
+
+### Fixed
+
+- The third worker in the architecture diagram is labelled `kube-wl03`
+  instead of `kube-ws03`.
+
 ## [2.1.0] - 2026-10-30
 
 ### Added
@@ -111,7 +126,8 @@ Read the upgrade notes below before running it against an existing cluster.
   registry on replicated Longhorn storage with offline staging of the Cilium
   chart and images.
 
-[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v1.0.0...v2.0.0
