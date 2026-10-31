@@ -6,6 +6,8 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-31
+
 ### Added
 
 - `kubernetes_longhorn_enabled` and `kubernetes_registry_enabled` (both `true`
@@ -195,7 +197,8 @@ Read the upgrade notes below before running it against an existing cluster.
   registry on replicated Longhorn storage with offline staging of the Cilium
   chart and images.
 
-[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.1.1...v3.0.0
 [2.1.1]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.0.1...v2.1.0
