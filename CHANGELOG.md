@@ -6,6 +6,40 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `kubernetes_longhorn_enabled` and `kubernetes_registry_enabled` (both `true`
+  by default) turn off Longhorn and the internal registry on small hosts. The
+  registry needs Longhorn, so the role refuses the registry without it. The
+  switches also cover version resolution, node removal, and the offline bundle.
+- A `helm` tag and `tasks/helm.yml`, which install Helm on the controllers when
+  the registry or Headlamp is enabled.
+
+### Changed
+
+- Helm moved out of `cilium_offline.yml`, so Headlamp no longer needs the
+  registry tags to find `/usr/local/bin/helm`.
+
+### Fixed
+
+- Start Keepalived and HAProxy on the first controller right after
+  `kubeadm init`, so the API VIP answers before the Cilium install. Before,
+  `cilium install` failed with "no route to host" on the VIP.
+- Wait only for the Cilium agent and operator during bootstrap. Hubble Relay
+  and UI cannot schedule on the tainted controller before workers join, so
+  `cilium status --wait` always timed out; `observability.yml` still waits for
+  the full status after the nodes have joined.
+- Detect an existing Cilium installation by its DaemonSet instead of
+  `cilium status`, so a re-run does not try to install it a second time.
+- Install `cri-tools` so `crictl` exists, online and from the offline bundle.
+  The etcd backup service failed with "crictl: command not found" because the
+  `kubeadm` package no longer depends on it.
+- Apply the networking sysctls when `ip_forward` is still 0, even if the file
+  is already in place. After a failed run the handler never ran, and
+  `kubeadm join` stopped on the preflight check.
+- Wait for the `longhorn-csi-plugin` DaemonSet before patching it. Longhorn
+  creates it after the manager is ready, so the patch failed with `NotFound`.
+
 ## [3.0.0] - 2026-10-30
 
 This is a major release: the next run can rename machines and move node

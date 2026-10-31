@@ -15,8 +15,14 @@ bundle staged on a cluster that has it. The bundle lives in
 | `images/*.tar` | Container images for this node architecture: kubeadm control-plane images, the containerd sandbox image, every image used by running pods, all Longhorn images, and the registry images | `offline_stage` tag |
 | `images/images.txt` | List of the staged image references | `offline_stage` tag |
 | `manifests/` | Longhorn and metrics-server manifests, the Longhorn image list, and the Headlamp chart (controllers) | `offline_stage` tag |
-| `cilium/`, `cilium-cli/`, `helm/` | Cilium Helm chart, Cilium CLI, and Helm archives | `registry_images` / `cilium_offline` tags (controllers) |
+| `cilium/`, `cilium-cli/` | Cilium Helm chart and Cilium CLI archives (only with `kubernetes_registry_enabled`) | `registry_images` / `cilium_offline` tags (controllers) |
+| `helm/` | Helm archive | `helm` tag (controllers) |
 | `VERSIONS` | The component versions and platform of the bundle | `offline_stage` tag |
+
+With `kubernetes_longhorn_enabled: false` the bundle leaves out the Longhorn
+manifests and images, and with `kubernetes_registry_enabled: false` it leaves
+out the registry images. Stage and install with the same switch values. The
+bundle also contains `cri-tools`, which provides `crictl` for the etcd backup.
 
 ## Stage a bundle
 

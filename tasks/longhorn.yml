@@ -93,6 +93,26 @@
   tags:
     - longhorn
 
+# longhorn-driver-deployer creates this DaemonSet only after longhorn-manager
+# is ready, which takes minutes on small nodes.
+- name: Wait for the Longhorn CSI plugin DaemonSet to exist
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - get
+      - daemonset
+      - longhorn-csi-plugin
+      - --namespace
+      - longhorn-system
+  register: kubernetes_longhorn_csi_plugin
+  changed_when: false
+  retries: 60
+  delay: 10
+  until: kubernetes_longhorn_csi_plugin.rc == 0
+  when: inventory_hostname == kubernetes_registry_node
+  tags:
+    - longhorn
+
 - name: Allow the Longhorn CSI plugin to run on tainted control-plane nodes
   ansible.builtin.command:
     argv:

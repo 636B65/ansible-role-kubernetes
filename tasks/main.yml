@@ -18,6 +18,18 @@
   tags:
     - always
 
+- name: Validate the Longhorn and registry switches
+  ansible.builtin.assert:
+    that:
+      - kubernetes_longhorn_enabled | bool or not kubernetes_registry_enabled | bool
+    fail_msg: >-
+      kubernetes_registry_enabled needs kubernetes_longhorn_enabled, because
+      the internal registry stores its images on Longhorn. Set both to false to
+      install neither.
+  run_once: true
+  tags:
+    - always
+
 - name: Validate the inventory names and addresses of every cluster host
   ansible.builtin.assert:
     that:
@@ -189,6 +201,7 @@
 
 - name: Install Longhorn replicated storage for the registry
   ansible.builtin.import_tasks: longhorn.yml
+  when: kubernetes_longhorn_enabled
   tags:
     - longhorn
     - registry
@@ -196,31 +209,48 @@
 
 - name: Deploy the internal image registry
   ansible.builtin.import_tasks: registry_deploy.yml
+  when: kubernetes_registry_enabled
   tags:
     - registry
     - registry_deploy
 
 - name: Configure containerd to use the internal registry
   ansible.builtin.import_tasks: registry_runtime.yml
+  when: kubernetes_registry_enabled
   tags:
     - registry
     - registry_runtime
 
 - name: Import selected images into the internal registry
   ansible.builtin.import_tasks: registry_images.yml
+  when: kubernetes_registry_enabled
   tags:
     - registry
     - registry_images
 
 - name: Build the configured images into the internal registry
   ansible.builtin.import_tasks: registry_builds.yml
-  when: kubernetes_registry_builds_enabled
+  when:
+    - kubernetes_registry_enabled
+    - kubernetes_registry_builds_enabled
   tags:
     - registry
     - registry_builds
 
+- name: Install Helm on the controllers
+  ansible.builtin.import_tasks: helm.yml
+  when: kubernetes_registry_enabled or kubernetes_headlamp_enabled
+  tags:
+    - helm
+    - registry
+    - registry_images
+    - cilium_offline
+    - observability
+    - headlamp
+
 - name: Stage Cilium LoadBalancer assets for offline use
   ansible.builtin.import_tasks: cilium_offline.yml
+  when: kubernetes_registry_enabled
   tags:
     - registry
     - registry_images

@@ -114,6 +114,35 @@
   tags:
     - bootstrap
 
+# admin.conf points at the API VIP, so the VIP must answer before the Cilium
+# steps below. The remaining controllers are started after bootstrap.
+- name: Start the load balancer on the first controller so the API VIP answers
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - keepalived
+    - haproxy
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+    - loadbalancer
+
+- name: Wait for the API VIP to accept connections
+  ansible.builtin.wait_for:
+    host: "{{ kubernetes_api_vip }}"
+    port: "{{ kubernetes_api_port }}"
+    timeout: 120
+  when:
+    - inventory_hostname == groups[kubernetes_control_plane_group][0]
+    - first_controller_admin_conf.stat.exists
+  tags:
+    - bootstrap
+    - loadbalancer
+
 - name: Check Cilium CLI release architecture
   ansible.builtin.assert:
     that:
@@ -170,11 +199,19 @@
   tags:
     - bootstrap
 
-- name: Check whether Cilium is already installed and healthy
+# Existence, not health: Hubble pods stay Pending until workers join, and
+# cilium install fails on an existing release.
+- name: Check whether Cilium is already installed
   ansible.builtin.command:
     argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - get
+      - daemonset
       - cilium
-      - status
+      - --namespace
+      - kube-system
   register: cilium_status_check
   changed_when: false
   failed_when: false
@@ -213,12 +250,23 @@
   tags:
     - bootstrap
 
-- name: Wait for Cilium to become ready
+# Hubble Relay and UI cannot schedule on the tainted controller before workers
+# join; observability.yml waits for the full cilium status afterwards.
+- name: Wait for the Cilium agent and operator to become ready
   ansible.builtin.command:
     argv:
-      - cilium
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - rollout
       - status
-      - --wait
+      - "{{ item }}"
+      - --namespace
+      - kube-system
+      - --timeout=300s
+  loop:
+    - daemonset/cilium
+    - deployment/cilium-operator
   changed_when: false
   when:
     - inventory_hostname == groups[kubernetes_control_plane_group][0]

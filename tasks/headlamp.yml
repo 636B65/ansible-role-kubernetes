@@ -25,8 +25,9 @@
     that:
       - kubernetes_headlamp_helm.stat.exists
     fail_msg: >-
-      Headlamp is installed with Helm. Run the cilium_offline tag (part of
-      registry) first; it installs Helm on the controllers.
+      Headlamp is installed with Helm, but /usr/local/bin/helm is missing on
+      {{ kubernetes_first_controller }}. Run the role with the helm tag first;
+      it installs Helm on the controllers.
   when: inventory_hostname == kubernetes_first_controller
 
 - name: Read the installed Headlamp release

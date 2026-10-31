@@ -56,6 +56,31 @@ application storage: every extra GiB in the registry claim consumes roughly
 three GiB across the workers at the default replica count. Keep iSCSI and NFSv4
 client support enabled on every node.
 
+### Small hosts: turn off Longhorn and the registry
+
+Longhorn and the internal registry are on by default. Together they start
+many pods on every node and need about 3 GB of RAM across the cluster, plus a
+lot of CPU while they come up. On small hosts, such as six 2 GB VMs on a
+4-core hypervisor, this can starve the control planes. Turn them off in the
+inventory:
+
+```yaml
+kubernetes_longhorn_enabled: false
+kubernetes_registry_enabled: false
+```
+
+- `kubernetes_registry_enabled: false` skips the registry, the containerd
+  registry configuration, image mirroring, image builds, and the Cilium
+  offline staging that fills the registry. Nodes pull images from the
+  upstream registries.
+- `kubernetes_longhorn_enabled: false` skips Longhorn. The registry stores its
+  images on Longhorn, so the role refuses `kubernetes_registry_enabled: true`
+  with Longhorn off. Keep Longhorn on and the registry off to have replicated
+  storage for your own workloads.
+- Helm is still installed on the controllers when Headlamp is enabled.
+- Turning a switch off on an existing cluster does not uninstall anything. To
+  remove Longhorn, follow the [Longhorn uninstall guide](https://longhorn.io/docs/latest/deploy/uninstall/).
+
 The role targets Debian-family systems with `apt`, Python, SSH, and root
 privilege escalation. The control-plane nodes need at least 2 CPU cores for
 the kubeadm setup. Initial installation requires internet access to configured
@@ -242,13 +267,14 @@ registry; run it while the first control-plane node is available:
 | `loadbalancer` | HAProxy and Keepalived configuration on control-plane nodes |
 | `bootstrap` | Initialize the first controller and install Cilium |
 | `join` | Join additional control-plane and worker nodes |
-| `longhorn` | Install Longhorn and prepare replicated storage prerequisites |
+| `helm` | Install Helm on the controllers (used by Headlamp and the Cilium offline assets) |
+| `longhorn` | Install Longhorn and prepare replicated storage prerequisites (needs `kubernetes_longhorn_enabled`) |
 | `registry_deploy` | Install Longhorn, migrate existing data if needed, and deploy two registry replicas |
 | `registry_runtime` | Configure containerd for the registry |
 | `registry_images` | Copy configured, NGINX, and active Cilium chart images into the registry; stage the chart and tools on controllers |
 | `registry_builds` | Build the images in `kubernetes_registry_builds` with Buildah and push them to the internal registry |
 | `cilium_offline` | Stage the active Cilium chart and rendered images, plus Helm and Cilium CLI, for offline use |
-| `registry` | Run Longhorn installation and all registry tasks |
+| `registry` | Run Longhorn installation and all registry tasks (each part skips when its switch is off) |
 | `firewall` | Configure or remove the nftables host firewall |
 | `hardening` | Write the API server audit, encryption, and Pod Security files on controllers |
 | `etcd_backup` | Install the scheduled etcd backup on controllers |

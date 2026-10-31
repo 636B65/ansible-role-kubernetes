@@ -52,6 +52,12 @@ kubernetes_held_packages:
   - kubeadm
   - kubectl
 
+# Longhorn replicated storage and the internal image registry that runs on it.
+# Both are on by default. They need about 3 GB of RAM across the cluster and a
+# lot of CPU while they start, so turn them off on small hosts. The registry
+# stores its images on Longhorn, so it cannot run without it.
+kubernetes_longhorn_enabled: true
+kubernetes_registry_enabled: true
 kubernetes_registry_namespace: local-registry
 kubernetes_registry_image: registry:2.8.3
 kubernetes_registry_hostname: registry.k8s.local

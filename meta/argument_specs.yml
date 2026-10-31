@@ -110,6 +110,18 @@ argument_specs:
           - kubelet
           - kubeadm
           - kubectl
+      kubernetes_longhorn_enabled:
+        type: bool
+        description: >-
+          Install Longhorn replicated storage. Set false on small hosts. The
+          internal registry needs it, so disable kubernetes_registry_enabled too.
+        default: true
+      kubernetes_registry_enabled:
+        type: bool
+        description: >-
+          Deploy the internal image registry on Longhorn, configure containerd
+          to use it, and mirror images into it. Requires kubernetes_longhorn_enabled.
+        default: true
       kubernetes_registry_namespace:
         type: str
         description: Namespace of the internal image registry.

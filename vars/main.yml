@@ -160,6 +160,7 @@ kubernetes_offline_packages:
   - kubelet
   - kubeadm
   - kubectl
+  - cri-tools
   - apt-transport-https
   - ca-certificates
   - curl
