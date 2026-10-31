@@ -34,6 +34,9 @@ All notable changes to this role are documented here. The format follows
 - Install `cri-tools` so `crictl` exists, online and from the offline bundle.
   The etcd backup service failed with "crictl: command not found" because the
   `kubeadm` package no longer depends on it.
+- Apply the networking sysctls when `ip_forward` is still 0, even if the file
+  is already in place. After a failed run the handler never ran, and
+  `kubeadm join` stopped on the preflight check.
 - Wait for the `longhorn-csi-plugin` DaemonSet before patching it. Longhorn
   creates it after the manager is ready, so the patch failed with `NotFound`.
 

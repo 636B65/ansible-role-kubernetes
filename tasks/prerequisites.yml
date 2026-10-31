@@ -55,6 +55,23 @@
   tags:
     - prerequisites
 
+# The handler is lost when an earlier run failed after writing the file, and
+# kubeadm then refuses to join with ip_forward=0. Check the live value too.
+- name: Read the live IP forwarding setting
+  ansible.builtin.slurp:
+    src: /proc/sys/net/ipv4/ip_forward
+  register: kubernetes_ip_forward_live
+  tags:
+    - prerequisites
+
+- name: Apply the networking sysctls when the live value differs
+  ansible.builtin.command:
+    cmd: sysctl --system
+  changed_when: true
+  when: (kubernetes_ip_forward_live.content | b64decode | trim) != '1'
+  tags:
+    - prerequisites
+
 - name: Read installed package versions
   ansible.builtin.package_facts:
     manager: apt
