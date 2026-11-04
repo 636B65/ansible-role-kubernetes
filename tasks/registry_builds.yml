@@ -81,6 +81,11 @@
   loop_control:
     label: "{{ item.0.name }}:{{ item.0.tag }}"
   changed_when: true
+  # The registry can return 500 on the first push while its storage settles.
+  register: kubernetes_registry_build_result
+  retries: 5
+  delay: 15
+  until: kubernetes_registry_build_result is succeeded
   when:
     - inventory_hostname == kubernetes_registry_node
     - item.1.changed or item.2.status == 404 or kubernetes_registry_builds_force
@@ -101,4 +106,10 @@
   loop: "{{ kubernetes_registry_builds }}"
   loop_control:
     label: "{{ item.name }}:{{ item.tag }}"
+  # The registry replicas share an NFS-backed volume, so a replica can briefly
+  # miss a manifest that another replica just wrote.
+  register: kubernetes_registry_verify_result
+  retries: 6
+  delay: 5
+  until: kubernetes_registry_verify_result.status | default(0) == 200
   when: inventory_hostname == kubernetes_registry_node

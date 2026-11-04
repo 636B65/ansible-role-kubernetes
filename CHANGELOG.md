@@ -6,6 +6,15 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-11-04
+
+### Fixed
+
+- The internal registry no longer fails pushes with HTTP 500 (`mkdir ...: file
+  exists`) or verification with a stale 404. The replicas share one NFS-backed
+  volume, so the Service now uses `sessionAffinity: ClientIP`, and the image
+  build and verify tasks (including the Cilium mirror verify) retry.
+
 ## [3.1.0] - 2026-10-31
 
 ### Added
@@ -197,7 +206,8 @@ Read the upgrade notes below before running it against an existing cluster.
   registry on replicated Longhorn storage with offline staging of the Cilium
   chart and images.
 
-[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.1.1...HEAD
+[3.1.1]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.1.1...v3.0.0
 [2.1.1]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.1.0...v2.1.1

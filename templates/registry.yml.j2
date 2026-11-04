@@ -74,6 +74,13 @@ metadata:
   namespace: {{ kubernetes_registry_namespace }}
 spec:
   type: NodePort
+  # The replicas share one NFS-backed volume, so concurrent writes through
+  # different replicas can fail (mkdir ...: file exists -> HTTP 500). Keep a
+  # client on one replica for the duration of a push.
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
   selector:
     app: kubernetes-image-registry
   ports:

@@ -386,6 +386,12 @@
     return_content: false
     timeout: 20
   loop: "{{ kubernetes_cilium_offline_images }}"
+  # Registry replicas share an NFS-backed volume, so one can briefly miss a
+  # manifest another replica just wrote.
+  register: kubernetes_cilium_verify_result
+  retries: 6
+  delay: 5
+  until: kubernetes_cilium_verify_result.status | default(0) == 200
   when: inventory_hostname == kubernetes_registry_node
   tags:
     - cilium_offline
