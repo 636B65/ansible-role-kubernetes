@@ -240,5 +240,99 @@ kubernetes_headlamp_values:
         if kubernetes_headlamp_service_type == 'NodePort' else {})
     }}
 
+# Optional Helm add-ons (tasks/addons.yml). Every entry is one Helm release
+# from a pinned chart; its archive is staged in the offline bundle as
+# <chart>-<version>.tgz. The images of the running pods are staged by the
+# regular offline image discovery.
+kubernetes_addons: >-
+  {{
+    [
+      {
+        'name': 'traefik',
+        'enabled': kubernetes_ingress_enabled | bool,
+        'chart': 'traefik',
+        'repo': 'https://traefik.github.io/charts',
+        'version': kubernetes_traefik_version,
+        'namespace': kubernetes_ingress_namespace,
+        'values': kubernetes_traefik_values,
+      },
+      {
+        'name': 'cert-manager',
+        'enabled': kubernetes_cert_manager_enabled | bool,
+        'chart': 'cert-manager',
+        'repo': 'https://charts.jetstack.io',
+        'version': kubernetes_cert_manager_version,
+        'namespace': kubernetes_cert_manager_namespace,
+        'values': kubernetes_cert_manager_values,
+      },
+      {
+        'name': 'argocd',
+        'enabled': kubernetes_argocd_enabled | bool,
+        'chart': 'argo-cd',
+        'repo': 'https://argoproj.github.io/argo-helm',
+        'version': kubernetes_argocd_version,
+        'namespace': kubernetes_argocd_namespace,
+        'values': kubernetes_argocd_values,
+      },
+    ]
+  }}
+kubernetes_addons_enabled: "{{ kubernetes_addons | selectattr('enabled') | list }}"
+
+kubernetes_traefik_values: >-
+  {{
+    {
+      'service': {'spec': {'type': kubernetes_ingress_service_type}},
+      'ingressClass': {'enabled': true, 'isDefaultClass': kubernetes_ingress_default_class | bool},
+    }
+    | combine(
+      {
+        'ports': {
+          'web': {'nodePort': kubernetes_ingress_http_node_port | int},
+          'websecure': {'nodePort': kubernetes_ingress_https_node_port | int},
+        }
+      } if kubernetes_ingress_service_type == 'NodePort' else {}
+    )
+  }}
+
+# The startup API check is a post-install Job whose image the offline bundle
+# would not contain (the Job is gone when images are staged), so it is off.
+kubernetes_cert_manager_values:
+  crds:
+    enabled: true
+    keep: true
+  startupapicheck:
+    enabled: false
+
+# Dex (SSO) is off; sign in as admin with the generated initial password.
+kubernetes_argocd_values: >-
+  {{
+    {
+      'dex': {'enabled': false},
+      'server': {
+        'service': (
+          {'type': kubernetes_argocd_service_type}
+          | combine(
+            {
+              'nodePortHttp': kubernetes_argocd_http_node_port | int,
+              'nodePortHttps': kubernetes_argocd_https_node_port | int,
+            } if kubernetes_argocd_service_type == 'NodePort' else {}
+          )
+        )
+      },
+    }
+  }}
+
+# NodePorts of every enabled service, to check that they do not collide.
+kubernetes_node_ports_in_use: >-
+  {{
+    ([kubernetes_registry_node_port | int] if kubernetes_registry_enabled else [])
+    + ([kubernetes_headlamp_node_port | int]
+       if kubernetes_headlamp_enabled and kubernetes_headlamp_service_type == 'NodePort' else [])
+    + ([kubernetes_ingress_http_node_port | int, kubernetes_ingress_https_node_port | int]
+       if kubernetes_ingress_enabled and kubernetes_ingress_service_type == 'NodePort' else [])
+    + ([kubernetes_argocd_http_node_port | int, kubernetes_argocd_https_node_port | int]
+       if kubernetes_argocd_enabled and kubernetes_argocd_service_type == 'NodePort' else [])
+  }}
+
 kubernetes_registry_address: "{{ kubernetes_registry_hostname }}:{{ kubernetes_registry_node_port }}"
 kubernetes_registry_builds_directory: /opt/kubernetes-builds

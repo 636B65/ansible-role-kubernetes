@@ -102,6 +102,18 @@ argument_specs:
         type: str
         description: Headlamp Helm chart version.
         default: 0.46.0
+      kubernetes_traefik_version:
+        type: str
+        description: Traefik Helm chart version (ingress add-on).
+        default: 42.3.0
+      kubernetes_cert_manager_version:
+        type: str
+        description: cert-manager Helm chart version.
+        default: v1.21.3
+      kubernetes_argocd_version:
+        type: str
+        description: Argo CD (argo-cd) Helm chart version.
+        default: 10.12.1
       kubernetes_held_packages:
         type: list
         description: Packages that apt holds outside the upgrade flow.
@@ -428,6 +440,68 @@ argument_specs:
         type: bool
         description: Create the cluster-admin ServiceAccount used to sign in to Headlamp.
         default: true
+      kubernetes_ingress_enabled:
+        type: bool
+        description: Install the Traefik ingress controller.
+        default: false
+      kubernetes_ingress_namespace:
+        type: str
+        description: Namespace of Traefik.
+        default: traefik
+      kubernetes_ingress_service_type:
+        type: str
+        description: Service type of Traefik.
+        choices:
+          - NodePort
+          - LoadBalancer
+        default: NodePort
+      kubernetes_ingress_http_node_port:
+        type: int
+        description: HTTP NodePort of Traefik when the service type is NodePort.
+        default: 30080
+      kubernetes_ingress_https_node_port:
+        type: int
+        description: HTTPS NodePort of Traefik when the service type is NodePort.
+        default: 30444
+      kubernetes_ingress_default_class:
+        type: bool
+        description: Make Traefik the default IngressClass.
+        default: true
+      kubernetes_cert_manager_enabled:
+        type: bool
+        description: Install cert-manager with its CRDs.
+        default: false
+      kubernetes_cert_manager_namespace:
+        type: str
+        description: Namespace of cert-manager.
+        default: cert-manager
+      kubernetes_cert_manager_selfsigned_issuer:
+        type: bool
+        description: Create a self-signed ClusterIssuer named selfsigned.
+        default: true
+      kubernetes_argocd_enabled:
+        type: bool
+        description: Install Argo CD.
+        default: false
+      kubernetes_argocd_namespace:
+        type: str
+        description: Namespace of Argo CD.
+        default: argocd
+      kubernetes_argocd_service_type:
+        type: str
+        description: Service type of the Argo CD server.
+        choices:
+          - ClusterIP
+          - NodePort
+        default: ClusterIP
+      kubernetes_argocd_http_node_port:
+        type: int
+        description: HTTP NodePort of the Argo CD server when the service type is NodePort.
+        default: 30880
+      kubernetes_argocd_https_node_port:
+        type: int
+        description: HTTPS NodePort of the Argo CD server when the service type is NodePort.
+        default: 30943
       kubernetes_upgrade_drain_timeout:
         type: str
         description: kubectl drain timeout used by the upgrade and removal flows.

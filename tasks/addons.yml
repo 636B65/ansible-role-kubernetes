@@ -1,0 +1,80 @@
+---
+- name: Validate the add-on settings
+  ansible.builtin.assert:
+    that:
+      - kubernetes_ingress_service_type in ['NodePort', 'LoadBalancer']
+      - kubernetes_argocd_service_type in ['ClusterIP', 'NodePort']
+      - kubernetes_node_ports_in_use | select('lt', 30000) | list | length == 0
+      - kubernetes_node_ports_in_use | select('gt', 32767) | list | length == 0
+      - kubernetes_node_ports_in_use | unique | length == kubernetes_node_ports_in_use | length
+    fail_msg: >-
+      kubernetes_ingress_service_type must be NodePort or LoadBalancer and
+      kubernetes_argocd_service_type ClusterIP or NodePort. Every NodePort of
+      the registry, Headlamp and the add-ons must be between 30000 and 32767
+      and unique (in use: {{ kubernetes_node_ports_in_use | join(', ') }}).
+  run_once: true
+
+- name: Require Helm for the add-on installation
+  ansible.builtin.stat:
+    path: /usr/local/bin/helm
+  register: kubernetes_addons_helm
+  when: inventory_hostname == kubernetes_first_controller
+
+- name: Validate that Helm is installed
+  ansible.builtin.assert:
+    that:
+      - kubernetes_addons_helm.stat.exists
+    fail_msg: >-
+      The add-ons are installed with Helm, but /usr/local/bin/helm is missing
+      on {{ kubernetes_first_controller }}. Run the role with the helm tag
+      first; it installs Helm on the controllers.
+  when: inventory_hostname == kubernetes_first_controller
+
+- name: Install or upgrade the enabled add-ons
+  ansible.builtin.include_tasks: helm_release.yml
+  loop: "{{ kubernetes_addons_enabled }}"
+  loop_control:
+    loop_var: kubernetes_addon
+    label: "{{ kubernetes_addon.name }}"
+  when: inventory_hostname == kubernetes_first_controller
+
+- name: Render the self-signed cert-manager ClusterIssuer
+  ansible.builtin.copy:
+    content: |
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: selfsigned
+      spec:
+        selfSigned: {}
+    dest: /etc/kubernetes/cert-manager-selfsigned-issuer.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_cert_manager_enabled | bool
+    - kubernetes_cert_manager_selfsigned_issuer | bool
+
+# The cert-manager webhook can take a moment to accept requests after its
+# deployment reports ready.
+- name: Apply the self-signed cert-manager ClusterIssuer
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - apply
+      - -f
+      - /etc/kubernetes/cert-manager-selfsigned-issuer.yaml
+  register: kubernetes_cert_manager_issuer_apply
+  changed_when: >-
+    'created' in kubernetes_cert_manager_issuer_apply.stdout
+    or 'configured' in kubernetes_cert_manager_issuer_apply.stdout
+  retries: 12
+  delay: 10
+  until: kubernetes_cert_manager_issuer_apply.rc == 0
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_cert_manager_enabled | bool
+    - kubernetes_cert_manager_selfsigned_issuer | bool

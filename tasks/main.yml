@@ -239,7 +239,7 @@
 
 - name: Install Helm on the controllers
   ansible.builtin.import_tasks: helm.yml
-  when: kubernetes_registry_enabled or kubernetes_headlamp_enabled
+  when: kubernetes_registry_enabled or kubernetes_headlamp_enabled or kubernetes_addons_enabled | length > 0
   tags:
     - helm
     - registry
@@ -247,6 +247,7 @@
     - cilium_offline
     - observability
     - headlamp
+    - addons
 
 - name: Stage Cilium LoadBalancer assets for offline use
   ansible.builtin.import_tasks: cilium_offline.yml
@@ -267,6 +268,12 @@
   tags:
     - observability
     - headlamp
+
+- name: Install the optional add-ons (ingress, cert-manager, Argo CD)
+  ansible.builtin.import_tasks: addons.yml
+  when: kubernetes_addons_enabled | length > 0
+  tags:
+    - addons
 
 - name: Stage an offline installation bundle
   ansible.builtin.import_tasks: offline_stage.yml

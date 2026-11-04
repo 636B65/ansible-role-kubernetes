@@ -6,6 +6,25 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-11-04
+
+### Added
+
+- Optional add-ons, installed with Helm from pinned charts and off by default
+  (see `docs/addons.md`):
+  - Traefik ingress controller (`kubernetes_ingress_enabled`, chart 42.3.0)
+    with a NodePort (30080/30444) or LoadBalancer service, as the default
+    IngressClass.
+  - cert-manager with its CRDs (`kubernetes_cert_manager_enabled`, v1.21.3)
+    and a `selfsigned` ClusterIssuer.
+  - Argo CD (`kubernetes_argocd_enabled`, chart 10.12.1) without Dex, with a
+    ClusterIP or NodePort service.
+- `addons` tag to install or update only the add-ons.
+- The offline bundle stages the charts of the enabled add-ons; their images
+  are staged with the other running images.
+- Preflight check that every NodePort (registry, Headlamp, add-ons) is in the
+  NodePort range and unique.
+
 ## [3.1.1] - 2026-11-04
 
 ### Fixed

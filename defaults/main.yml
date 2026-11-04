@@ -45,6 +45,12 @@ kubernetes_metrics_server_version: "v0.9.0"
 kubernetes_prometheus_stack_version: "92.14.0"
 # renovate: datasource=helm registryUrl=https://kubernetes-sigs.github.io/headlamp/ depName=headlamp
 kubernetes_headlamp_version: "0.46.0"
+# renovate: datasource=helm registryUrl=https://traefik.github.io/charts depName=traefik
+kubernetes_traefik_version: "42.3.0"
+# renovate: datasource=helm registryUrl=https://charts.jetstack.io depName=cert-manager
+kubernetes_cert_manager_version: "v1.21.3"
+# renovate: datasource=helm registryUrl=https://argoproj.github.io/argo-helm depName=argo-cd
+kubernetes_argocd_version: "10.12.1"
 
 # Packages that apt must never upgrade outside the role's upgrade flow.
 kubernetes_held_packages:
@@ -173,6 +179,35 @@ kubernetes_headlamp_service_type: ClusterIP
 kubernetes_headlamp_node_port: 30443
 # Create a cluster-admin ServiceAccount whose tokens can sign in to Headlamp.
 kubernetes_headlamp_admin_account_enabled: true
+
+# Optional cluster add-ons, installed with Helm from pinned charts and staged
+# in the offline bundle when enabled; see docs/addons.md. All are off by
+# default.
+#
+# Traefik ingress controller (Ingress and Gateway API). NodePort exposes HTTP
+# and HTTPS on every node; LoadBalancer needs a load-balancer implementation
+# such as Cilium LB IPAM (see docs/deploy-nginx-cilium-loadbalancer.md).
+kubernetes_ingress_enabled: false
+kubernetes_ingress_namespace: traefik
+kubernetes_ingress_service_type: NodePort
+kubernetes_ingress_http_node_port: 30080
+kubernetes_ingress_https_node_port: 30444
+# Make Traefik the default IngressClass.
+kubernetes_ingress_default_class: true
+
+# cert-manager, with its CRDs. A self-signed ClusterIssuer named
+# "selfsigned" is created for lab certificates.
+kubernetes_cert_manager_enabled: false
+kubernetes_cert_manager_namespace: cert-manager
+kubernetes_cert_manager_selfsigned_issuer: true
+
+# Argo CD for GitOps. ClusterIP keeps the UI inside the cluster (use kubectl
+# port-forward); NodePort exposes it on every node at the two ports below.
+kubernetes_argocd_enabled: false
+kubernetes_argocd_namespace: argocd
+kubernetes_argocd_service_type: ClusterIP
+kubernetes_argocd_http_node_port: 30880
+kubernetes_argocd_https_node_port: 30943
 
 # Upgrade flow (examples/upgrade.yml, tag "upgrade").
 kubernetes_upgrade_drain_timeout: 600s

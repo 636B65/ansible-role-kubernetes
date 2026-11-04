@@ -14,7 +14,7 @@ bundle staged on a cluster that has it. The bundle lives in
 | `debs/` | Every package the role installs, with its full dependency closure, and an apt index (`Packages`) | `offline_stage` tag |
 | `images/*.tar` | Container images for this node architecture: kubeadm control-plane images, the containerd sandbox image, every image used by running pods, all Longhorn images, and the registry images | `offline_stage` tag |
 | `images/images.txt` | List of the staged image references | `offline_stage` tag |
-| `manifests/` | Longhorn and metrics-server manifests, the Longhorn image list, and the Headlamp chart (controllers) | `offline_stage` tag |
+| `manifests/` | Longhorn and metrics-server manifests, the Longhorn image list, the Headlamp chart, and the charts of the enabled add-ons (controllers) | `offline_stage` tag |
 | `cilium/`, `cilium-cli/` | Cilium Helm chart and Cilium CLI archives (only with `kubernetes_registry_enabled`) | `registry_images` / `cilium_offline` tags (controllers) |
 | `helm/` | Helm archive | `helm` tag (controllers) |
 | `VERSIONS` | The component versions and platform of the bundle | `offline_stage` tag |
@@ -70,7 +70,7 @@ same CPU architecture, and the same pinned versions as the offline cluster.
    - installs the Cilium CLI from the bundle and Cilium from the staged
      chart, with tag-only image references so the imported images match,
    - applies the staged Longhorn and metrics-server manifests and installs
-     Headlamp from the staged chart,
+     Headlamp and the enabled add-ons from the staged charts,
    - fills the internal registry from the image archives and builds the
      images in `kubernetes_registry_builds` from base images in it.
 

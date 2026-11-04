@@ -16,7 +16,7 @@
   "packageRules": [
     {
       "description": "Keep v-prefixed values v-prefixed",
-      "matchDepNames": ["cilium/cilium-cli", "helm/helm", "kubernetes-sigs/metrics-server"],
+      "matchDepNames": ["cilium/cilium-cli", "helm/helm", "kubernetes-sigs/metrics-server", "cert-manager"],
       "extractVersion": "^(?<version>v.*)$"
     },
     {

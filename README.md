@@ -127,6 +127,7 @@ To run an interactive Ubuntu pod from the image in the local registry, see the
 | [Build your own images](docs/building-images.md) | Skeleton Dockerfiles built into the internal registry |
 | [Import your own images](docs/importing-images.md) | Bringing images from other registries, image files, or a workstation into the internal registry |
 | [Headlamp web UI](docs/headlamp.md) | Opening the cluster web UI, sign-in tokens, network exposure |
+| [Optional add-ons](docs/addons.md) | Traefik ingress, cert-manager and Argo CD |
 | [Troubleshooting](docs/troubleshooting.md) | VIP, etcd, joins, Longhorn, registry, Pod Security, upgrades |
 
 ## Observability
@@ -267,7 +268,7 @@ registry; run it while the first control-plane node is available:
 | `loadbalancer` | HAProxy and Keepalived configuration on control-plane nodes |
 | `bootstrap` | Initialize the first controller and install Cilium |
 | `join` | Join additional control-plane and worker nodes |
-| `helm` | Install Helm on the controllers (used by Headlamp and the Cilium offline assets) |
+| `helm` | Install Helm on the controllers (used by Headlamp, the add-ons and the Cilium offline assets) |
 | `longhorn` | Install Longhorn and prepare replicated storage prerequisites (needs `kubernetes_longhorn_enabled`) |
 | `registry_deploy` | Install Longhorn, migrate existing data if needed, and deploy two registry replicas |
 | `registry_runtime` | Configure containerd for the registry |
@@ -280,6 +281,7 @@ registry; run it while the first control-plane node is available:
 | `etcd_backup` | Install the scheduled etcd backup on controllers |
 | `observability` | Install metrics-server, enable Hubble, install Headlamp, and optionally kube-prometheus-stack |
 | `headlamp` | Install or update the Headlamp web UI |
+| `addons` | Install or update the enabled add-ons: Traefik, cert-manager, Argo CD (see [docs/addons.md](docs/addons.md)) |
 | `offline_stage` | Stage the offline package and image bundle (only runs when requested) |
 | `upgrade` | Rolling upgrade; needs `serial: 1`, see `examples/upgrade.yml` (only runs when requested) |
 | `remove_node` | Remove `kubernetes_remove_nodes`; see `examples/remove-node.yml` (only runs when requested) |
@@ -307,6 +309,9 @@ All components are pinned in `defaults/main.yml`:
 | `kubernetes_metrics_server_version` | `v0.9.0` |
 | `kubernetes_prometheus_stack_version` | `92.14.0` |
 | `kubernetes_headlamp_version` | `0.46.0` |
+| `kubernetes_traefik_version` | `42.3.0` |
+| `kubernetes_cert_manager_version` | `v1.21.3` |
+| `kubernetes_argocd_version` | `10.12.1` |
 
 Set a value to `latest` to resolve the newest stable release at runtime
 instead; this is not reproducible and is refused in offline mode. apt holds

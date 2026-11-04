@@ -88,6 +88,24 @@
     - kubernetes_headlamp_enabled
     - inventory_hostname in groups[kubernetes_control_plane_group]
 
+- name: Stage the pinned Helm charts of the enabled add-ons on controllers
+  ansible.builtin.command:
+    argv:
+      - helm
+      - pull
+      - "{{ item.chart }}"
+      - --repo
+      - "{{ item.repo }}"
+      - --version
+      - "{{ item.version }}"
+      - --destination
+      - "{{ kubernetes_offline_manifests_directory }}"
+    creates: "{{ kubernetes_offline_manifests_directory }}/{{ item.chart }}-{{ item.version }}.tgz"
+  loop: "{{ kubernetes_addons_enabled }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: inventory_hostname in groups[kubernetes_control_plane_group]
+
 - name: List the control-plane images for the pinned Kubernetes release
   ansible.builtin.command:
     argv:

@@ -1,0 +1,70 @@
+---
+# Installs or upgrades one Helm release from tasks/addons.yml. Runs on the first
+# controller; kubernetes_addon is an entry of kubernetes_addons.
+- name: Read the installed Helm release of {{ kubernetes_addon.name }}
+  ansible.builtin.command:
+    argv:
+      - helm
+      - list
+      - --namespace
+      - "{{ kubernetes_addon.namespace }}"
+      - --filter
+      - ^{{ kubernetes_addon.name }}$
+      - --output
+      - json
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  register: kubernetes_addon_releases
+  changed_when: false
+
+- name: Read the Helm release values of {{ kubernetes_addon.name }}
+  ansible.builtin.command:
+    argv:
+      - helm
+      - get
+      - values
+      - "{{ kubernetes_addon.name }}"
+      - --namespace
+      - "{{ kubernetes_addon.namespace }}"
+      - --output
+      - json
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  register: kubernetes_addon_current_values
+  changed_when: false
+  failed_when: false
+
+- name: Render the Helm values of {{ kubernetes_addon.name }}
+  ansible.builtin.copy:
+    content: "{{ kubernetes_addon['values'] | to_nice_yaml(indent=2) }}"
+    dest: /etc/kubernetes/{{ kubernetes_addon.name }}-values.yaml
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Install or upgrade {{ kubernetes_addon.name }}
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['helm', 'upgrade', '--install', kubernetes_addon.name]
+        + (
+          [kubernetes_offline_manifests_directory ~ '/' ~ kubernetes_addon.chart ~ '-' ~ kubernetes_addon.version ~ '.tgz']
+          if kubernetes_offline_mode
+          else [kubernetes_addon.chart, '--repo', kubernetes_addon.repo, '--version', kubernetes_addon.version]
+        )
+        + ['--namespace', kubernetes_addon.namespace, '--create-namespace',
+           '--values', '/etc/kubernetes/' ~ kubernetes_addon.name ~ '-values.yaml',
+           '--wait', '--timeout', '10m']
+      }}
+  environment:
+    KUBECONFIG: "{{ kubernetes_admin_kubeconfig }}"
+  changed_when: true
+  when: >-
+    (
+      kubernetes_addon_releases.stdout | from_json
+      | selectattr('status', 'equalto', 'deployed')
+      | selectattr('chart', 'equalto', kubernetes_addon.chart ~ '-' ~ kubernetes_addon.version)
+      | list | length == 0
+    )
+    or kubernetes_addon_current_values.rc != 0
+    or (kubernetes_addon_current_values.stdout | from_json) != kubernetes_addon['values']

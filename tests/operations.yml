@@ -246,6 +246,45 @@
       vars:
         kubernetes_headlamp_service_type: NodePort
 
+    - name: Verify that the add-ons are off by default
+      ansible.builtin.assert:
+        that:
+          - kubernetes_addons | length == 3
+          - kubernetes_addons_enabled | length == 0
+          - kubernetes_node_ports_in_use == [30500]
+
+    - name: Verify the add-on values when every add-on is on with NodePorts
+      ansible.builtin.assert:
+        that:
+          - kubernetes_addons_enabled | map(attribute='name') | list == ['traefik', 'cert-manager', 'argocd']
+          - kubernetes_addons_enabled | map(attribute='chart') | list == ['traefik', 'cert-manager', 'argo-cd']
+          - kubernetes_traefik_values.service.spec.type == 'NodePort'
+          - kubernetes_traefik_values.ports.web.nodePort == 30080
+          - kubernetes_traefik_values.ports.websecure.nodePort == 30444
+          - kubernetes_traefik_values.ingressClass.isDefaultClass is sameas true
+          - kubernetes_cert_manager_values.crds.enabled
+          - not kubernetes_cert_manager_values.startupapicheck.enabled
+          - not kubernetes_argocd_values.dex.enabled
+          - "kubernetes_argocd_values.server.service == {'type': 'NodePort', 'nodePortHttp': 30880, 'nodePortHttps': 30943}"
+          - kubernetes_node_ports_in_use | sort == [30080, 30443, 30444, 30500, 30880, 30943]
+          - kubernetes_node_ports_in_use | unique | length == 6
+      vars:
+        kubernetes_ingress_enabled: true
+        kubernetes_cert_manager_enabled: true
+        kubernetes_argocd_enabled: true
+        kubernetes_argocd_service_type: NodePort
+        kubernetes_headlamp_service_type: NodePort
+
+    - name: Verify the Traefik values for a LoadBalancer service
+      ansible.builtin.assert:
+        that:
+          - "kubernetes_traefik_values == {'service': {'spec': {'type': 'LoadBalancer'}}, 'ingressClass': {'enabled': true, 'isDefaultClass': false}}"
+          - "kubernetes_argocd_values.server.service == {'type': 'ClusterIP'}"
+      vars:
+        kubernetes_ingress_enabled: true
+        kubernetes_ingress_service_type: LoadBalancer
+        kubernetes_ingress_default_class: false
+
     - name: Read the skeleton Dockerfiles
       ansible.builtin.set_fact:
         test_dockerfiles: "{{ test_dockerfiles | default({}) | combine({item.name: lookup('file', item.context ~ '/Dockerfile')}) }}"
