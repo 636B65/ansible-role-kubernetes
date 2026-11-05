@@ -170,6 +170,7 @@
           + (kubernetes_registry_images | map(attribute='source') | list if kubernetes_registry_enabled else [])
           + ([kubernetes_registry_image] if kubernetes_registry_enabled else [])
           + ([kubernetes_headlamp_image] if kubernetes_headlamp_enabled else [])
+          + ([kubernetes_velero_kubectl_image] if kubernetes_velero_enabled | bool else [])
           + kubernetes_offline_extra_images
         )
         | map('trim')

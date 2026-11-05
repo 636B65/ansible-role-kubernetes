@@ -274,6 +274,16 @@ kubernetes_addons: >-
         'namespace': kubernetes_argocd_namespace,
         'values': kubernetes_argocd_values,
       },
+      {
+        'name': 'velero',
+        'enabled': kubernetes_velero_enabled | bool,
+        'chart': 'velero',
+        'repo': 'https://vmware-tanzu.github.io/helm-charts',
+        'version': kubernetes_velero_version,
+        'namespace': kubernetes_velero_namespace,
+        'values': kubernetes_velero_values,
+        'sensitive': true,
+      },
     ]
   }}
 kubernetes_addons_enabled: "{{ kubernetes_addons | selectattr('enabled') | list }}"
@@ -321,6 +331,68 @@ kubernetes_argocd_values: >-
       },
     }
   }}
+
+# The node agent mounts the kubelet pod directories (hostPath), which the
+# baseline Pod Security profile forbids, so its namespace is privileged.
+# Snapshots are off: volume data is backed up by the node agent instead.
+kubernetes_velero_values: >-
+  {{
+    {
+      'upgradeCRDs': true,
+      'snapshotsEnabled': false,
+      'deployNodeAgent': kubernetes_velero_volume_backups | bool,
+      'initContainers': [
+        {
+          'name': 'velero-plugin-for-aws',
+          'image': 'docker.io/velero/velero-plugin-for-aws:' ~ kubernetes_velero_aws_plugin_version,
+          'imagePullPolicy': 'IfNotPresent',
+          'volumeMounts': [{'mountPath': '/target', 'name': 'plugins'}],
+        }
+      ],
+      'credentials': {
+        'useSecret': true,
+        'secretContents': {'cloud': kubernetes_velero_credentials},
+      },
+      'configuration': {
+        'defaultVolumesToFsBackup': kubernetes_velero_volume_backups | bool,
+        'backupStorageLocation': [
+          {
+            'name': 'default',
+            'provider': 'aws',
+            'bucket': kubernetes_velero_bucket,
+            'default': true,
+            'config': (
+              {'region': kubernetes_velero_s3_region}
+              | combine({'s3Url': kubernetes_velero_s3_url, 's3ForcePathStyle': 'true'}
+                        if kubernetes_velero_s3_url | length > 0 else {})
+              | combine({'insecureSkipTLSVerify': 'true'}
+                        if kubernetes_velero_s3_insecure_skip_tls_verify | bool else {})
+              | combine(kubernetes_velero_s3_config)
+            ),
+          }
+        ],
+      },
+      'schedules': (
+        {
+          'daily': {
+            'disabled': false,
+            'schedule': kubernetes_velero_schedule,
+            'template': {'ttl': kubernetes_velero_ttl, 'includedNamespaces': ['*']},
+          }
+        } if kubernetes_velero_schedule | length > 0 else {}
+      ),
+    }
+  }}
+
+# S3 credentials file for the Velero AWS plugin.
+kubernetes_velero_credentials: |
+  [default]
+  aws_access_key_id={{ kubernetes_velero_s3_access_key }}
+  aws_secret_access_key={{ kubernetes_velero_s3_secret_key }}
+
+# The upgrade-CRDs hook Job of the Velero chart runs kubectl at the cluster
+# version; it is gone when the offline bundle discovers running images.
+kubernetes_velero_kubectl_image: "registry.k8s.io/kubectl:v{{ kubernetes_resolved_version | default('') }}"
 
 # NodePorts of every enabled service, to check that they do not collide.
 kubernetes_node_ports_in_use: >-

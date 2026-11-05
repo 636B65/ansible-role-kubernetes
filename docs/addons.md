@@ -1,6 +1,6 @@
 # Optional add-ons
 
-The role can install three common cluster add-ons with Helm. All are off by
+The role can install four common cluster add-ons with Helm. All are off by
 default; turn on the ones you need. Each is pinned to a chart version in
 `defaults/main.yml` (Renovate proposes updates), installed from the first
 controller, and kept in sync on every run: the release is upgraded when the
@@ -11,6 +11,7 @@ chart version or the values change.
 | [Traefik](https://traefik.io/traefik/) ingress controller (Ingress and Gateway API) | `kubernetes_ingress_enabled` | `kubernetes_traefik_version` | `traefik` |
 | [cert-manager](https://cert-manager.io/) with its CRDs | `kubernetes_cert_manager_enabled` | `kubernetes_cert_manager_version` | `cert-manager` |
 | [Argo CD](https://argo-cd.readthedocs.io/) for GitOps | `kubernetes_argocd_enabled` | `kubernetes_argocd_version` | `argocd` |
+| [Velero](https://velero.io/) backups to S3/MinIO | `kubernetes_velero_enabled` | `kubernetes_velero_version` | `velero` |
 
 ```yaml
 kubernetes_ingress_enabled: true
@@ -27,7 +28,7 @@ ansible-playbook -i examples/inventory.yml examples/site.yml --tags addons
 
 Turning a switch off later does not uninstall the add-on; remove it with
 `helm uninstall <name> --namespace <namespace>` (`traefik`, `cert-manager`,
-`argocd`).
+`argocd`, `velero`).
 
 ## Traefik
 
@@ -101,6 +102,53 @@ Then open <https://localhost:8443>. With
 `kubernetes_argocd_service_type: NodePort` the UI is reachable on every node
 at `kubernetes_argocd_https_node_port` (30943) without a port-forward. Change
 the admin password and delete the initial secret afterwards.
+
+## Velero
+
+Velero backs up the Kubernetes objects of all namespaces and, with its node
+agent, the data in the volumes (file system backup with Kopia, which works
+with Longhorn without CSI snapshots) to S3-compatible object storage. The etcd
+backup (see [etcd-backup-restore.md](etcd-backup-restore.md)) restores the
+cluster itself; Velero restores workloads and their data, also into a new
+cluster.
+
+You need a bucket on MinIO or AWS S3 that the nodes can reach. Keep the keys in
+Ansible Vault:
+
+```yaml
+kubernetes_velero_enabled: true
+kubernetes_velero_bucket: velero
+kubernetes_velero_s3_url: http://minio.lab.local:9000   # empty for AWS S3
+kubernetes_velero_s3_region: minio
+kubernetes_velero_s3_access_key: "{{ vault_velero_access_key }}"
+kubernetes_velero_s3_secret_key: "{{ vault_velero_secret_key }}"
+```
+
+- A daily backup of all namespaces runs at `kubernetes_velero_schedule`
+  (`0 3 * * *`) and is kept for `kubernetes_velero_ttl` (`720h`). Set the
+  schedule to `""` to only take backups by hand.
+- `kubernetes_velero_volume_backups: false` backs up the objects only, without
+  the node agent.
+- The node agent reads the pod volumes from the host, which the baseline Pod
+  Security profile forbids, so the role creates the `velero` namespace with
+  the `privileged` profile before installing.
+- `kubernetes_velero_s3_insecure_skip_tls_verify` accepts a self-signed
+  endpoint certificate; `kubernetes_velero_s3_config` adds other backup
+  storage location settings, e.g. `{checksumAlgorithm: ""}` for older MinIO.
+
+With the [Velero CLI](https://velero.io/docs/main/basic-install/#install-the-cli)
+on a machine with the cluster kubeconfig:
+
+```sh
+velero backup get                                  # scheduled backups
+velero backup create before-upgrade --wait         # a backup by hand
+velero restore create --from-backup before-upgrade # restore everything
+velero restore create --from-backup before-upgrade --include-namespaces shop
+```
+
+Test a restore before you rely on the backups. The offline bundle includes the
+Velero chart, its images (with the AWS plugin) and the `kubectl` image its CRD
+upgrade job uses, when Velero is enabled while staging.
 
 ## NodePorts
 

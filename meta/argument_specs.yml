@@ -114,6 +114,14 @@ argument_specs:
         type: str
         description: Argo CD (argo-cd) Helm chart version.
         default: 10.12.1
+      kubernetes_velero_version:
+        type: str
+        description: Velero Helm chart version.
+        default: 12.2.3
+      kubernetes_velero_aws_plugin_version:
+        type: str
+        description: Version of the Velero plugin for AWS (S3-compatible storage).
+        default: v1.14.4
       kubernetes_held_packages:
         type: list
         description: Packages that apt holds outside the upgrade flow.
@@ -502,6 +510,56 @@ argument_specs:
         type: int
         description: HTTPS NodePort of the Argo CD server when the service type is NodePort.
         default: 30943
+      kubernetes_velero_enabled:
+        type: bool
+        description: Install Velero for backups to S3-compatible storage.
+        default: false
+      kubernetes_velero_namespace:
+        type: str
+        description: Namespace of Velero (labeled privileged for the node agent).
+        default: velero
+      kubernetes_velero_bucket:
+        type: str
+        description: Bucket for the Velero backups.
+        default: ""
+      kubernetes_velero_s3_url:
+        type: str
+        description: S3 endpoint URL, e.g. of MinIO; empty for AWS S3.
+        default: ""
+      kubernetes_velero_s3_region:
+        type: str
+        description: S3 region.
+        default: minio
+      kubernetes_velero_s3_access_key:
+        type: str
+        description: S3 access key.
+        no_log: true
+        default: ""
+      kubernetes_velero_s3_secret_key:
+        type: str
+        description: S3 secret key.
+        no_log: true
+        default: ""
+      kubernetes_velero_s3_insecure_skip_tls_verify:
+        type: bool
+        description: Skip TLS verification of the S3 endpoint.
+        default: false
+      kubernetes_velero_s3_config:
+        type: dict
+        description: Extra settings for the Velero backup storage location.
+        default: {}
+      kubernetes_velero_volume_backups:
+        type: bool
+        description: Back up volume data with the Velero node agent (file system backup).
+        default: true
+      kubernetes_velero_schedule:
+        type: str
+        description: Cron schedule of the daily backup of all namespaces; empty for none.
+        default: 0 3 * * *
+      kubernetes_velero_ttl:
+        type: str
+        description: How long scheduled backups are kept.
+        default: 720h
       kubernetes_upgrade_drain_timeout:
         type: str
         description: kubectl drain timeout used by the upgrade and removal flows.

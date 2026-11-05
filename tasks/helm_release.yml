@@ -33,6 +33,7 @@
   register: kubernetes_addon_current_values
   changed_when: false
   failed_when: false
+  no_log: "{{ kubernetes_addon.sensitive | default(false) }}"
 
 - name: Render the Helm values of {{ kubernetes_addon.name }}
   ansible.builtin.copy:
@@ -41,6 +42,7 @@
     owner: root
     group: root
     mode: "0600"
+  no_log: "{{ kubernetes_addon.sensitive | default(false) }}"
 
 - name: Install or upgrade {{ kubernetes_addon.name }}
   ansible.builtin.command:
@@ -68,3 +70,4 @@
     )
     or kubernetes_addon_current_values.rc != 0
     or (kubernetes_addon_current_values.stdout | from_json) != kubernetes_addon['values']
+  no_log: "{{ kubernetes_addon.sensitive | default(false) }}"

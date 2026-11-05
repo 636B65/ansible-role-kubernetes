@@ -6,6 +6,19 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-11-05
+
+### Added
+
+- Velero add-on (`kubernetes_velero_enabled`, chart 12.2.3 with the AWS
+  plugin v1.14.4): backups of all namespaces and, with the node agent, of the
+  volume data to S3-compatible storage such as MinIO, with a daily schedule.
+  The role creates the `velero` namespace with the privileged Pod Security
+  profile for the node agent, hides the S3 keys from the output, and stages
+  the chart, images and CRD job image in the offline bundle.
+- Renovate runs weekly from `.github/workflows/renovate.yml`, since the
+  Renovate app is not installed; it proposes updates of the pinned versions.
+
 ## [3.2.0] - 2026-11-04
 
 ### Added

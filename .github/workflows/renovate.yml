@@ -1,0 +1,38 @@
+name: Renovate
+
+# Runs Renovate here on a schedule, since the Renovate app is not installed on
+# this repository. It opens pull requests for the pinned component versions in
+# defaults/main.yml as configured in renovate.json, and keeps a dependency
+# dashboard issue. Needs "Allow GitHub Actions to create and approve pull
+# requests" (Settings > Actions > General). Pull requests opened with the
+# workflow token do not start CI by themselves: run "CI and release" by hand on
+# the pull request's branch (workflow_dispatch).
+
+on:
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: renovatebot/github-action@1c0cf989c02653fba0efe7ca5772338860ca71dc # v46.3.12
+        with:
+          token: ${{ github.token }}
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_REQUIRE_CONFIG: required
+          LOG_LEVEL: info

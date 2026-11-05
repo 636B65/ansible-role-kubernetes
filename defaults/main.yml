@@ -51,6 +51,10 @@ kubernetes_traefik_version: "42.3.0"
 kubernetes_cert_manager_version: "v1.21.3"
 # renovate: datasource=helm registryUrl=https://argoproj.github.io/argo-helm depName=argo-cd
 kubernetes_argocd_version: "10.12.1"
+# renovate: datasource=helm registryUrl=https://vmware-tanzu.github.io/helm-charts depName=velero
+kubernetes_velero_version: "12.2.3"
+# renovate: datasource=docker depName=velero/velero-plugin-for-aws
+kubernetes_velero_aws_plugin_version: "v1.14.4"
 
 # Packages that apt must never upgrade outside the role's upgrade flow.
 kubernetes_held_packages:
@@ -208,6 +212,28 @@ kubernetes_argocd_namespace: argocd
 kubernetes_argocd_service_type: ClusterIP
 kubernetes_argocd_http_node_port: 30880
 kubernetes_argocd_https_node_port: 30943
+
+# Velero backs up the Kubernetes objects and, with its node agent, the data in
+# the volumes (file system backup with Kopia) to S3-compatible object storage,
+# such as MinIO or AWS S3. Needs a bucket the nodes can reach.
+kubernetes_velero_enabled: false
+kubernetes_velero_namespace: velero
+kubernetes_velero_bucket: ""
+# S3 endpoint, e.g. http://minio.lab.local:9000; empty = AWS S3.
+kubernetes_velero_s3_url: ""
+kubernetes_velero_s3_region: minio
+# Keep the keys in Ansible Vault.
+kubernetes_velero_s3_access_key: ""
+kubernetes_velero_s3_secret_key: ""
+kubernetes_velero_s3_insecure_skip_tls_verify: false
+# Extra backup storage location settings, e.g. {checksumAlgorithm: ""} for
+# older MinIO releases.
+kubernetes_velero_s3_config: {}
+# Back up the data in volumes too (node agent, file system backup).
+kubernetes_velero_volume_backups: true
+# Daily backup of all namespaces (cron, cluster time zone); "" = none.
+kubernetes_velero_schedule: "0 3 * * *"
+kubernetes_velero_ttl: 720h
 
 # Upgrade flow (examples/upgrade.yml, tag "upgrade").
 kubernetes_upgrade_drain_timeout: 600s

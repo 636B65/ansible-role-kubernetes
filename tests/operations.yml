@@ -249,7 +249,7 @@
     - name: Verify that the add-ons are off by default
       ansible.builtin.assert:
         that:
-          - kubernetes_addons | length == 3
+          - kubernetes_addons | length == 4
           - kubernetes_addons_enabled | length == 0
           - kubernetes_node_ports_in_use == [30500]
 
@@ -274,6 +274,46 @@
         kubernetes_argocd_enabled: true
         kubernetes_argocd_service_type: NodePort
         kubernetes_headlamp_service_type: NodePort
+
+    - name: Verify the Velero values for MinIO
+      ansible.builtin.assert:
+        that:
+          - kubernetes_addons_enabled | map(attribute='name') | list == ['velero']
+          - kubernetes_addons_enabled[0].sensitive
+          - kubernetes_velero_values.deployNodeAgent
+          - not kubernetes_velero_values.snapshotsEnabled
+          - kubernetes_velero_values.configuration.defaultVolumesToFsBackup
+          - kubernetes_velero_values.initContainers[0].image == 'docker.io/velero/velero-plugin-for-aws:v1.14.4'
+          - kubernetes_velero_values.configuration.backupStorageLocation[0].config.region == 'minio'
+          - kubernetes_velero_values.configuration.backupStorageLocation[0].config.s3Url == 'http://minio.lab.local:9000'
+          - kubernetes_velero_values.configuration.backupStorageLocation[0].config.s3ForcePathStyle == 'true'
+          - kubernetes_velero_values.configuration.backupStorageLocation[0].config.checksumAlgorithm == ''
+          - kubernetes_velero_values.configuration.backupStorageLocation[0].config | length == 4
+          - kubernetes_velero_values.configuration.backupStorageLocation[0].bucket == 'velero'
+          - "kubernetes_velero_values.credentials.secretContents.cloud == '[default]\naws_access_key_id=AKIA\naws_secret_access_key=SECRET\n'"
+          - kubernetes_velero_values.schedules.daily.schedule == '0 3 * * *'
+          - kubernetes_velero_values.schedules.daily.template.ttl == '720h'
+          - kubernetes_velero_kubectl_image == 'registry.k8s.io/kubectl:v1.36.5'
+      vars:
+        kubernetes_velero_enabled: true
+        kubernetes_velero_bucket: velero
+        kubernetes_velero_s3_url: http://minio.lab.local:9000
+        kubernetes_velero_s3_access_key: AKIA
+        kubernetes_velero_s3_secret_key: SECRET
+        kubernetes_velero_s3_config:
+          checksumAlgorithm: ""
+
+    - name: Verify the Velero values for AWS S3 without volume backups or schedule
+      ansible.builtin.assert:
+        that:
+          - "kubernetes_velero_values.configuration.backupStorageLocation[0].config == {'region': 'eu-north-1'}"
+          - not kubernetes_velero_values.deployNodeAgent
+          - kubernetes_velero_values.schedules == {}
+      vars:
+        kubernetes_velero_enabled: true
+        kubernetes_velero_s3_region: eu-north-1
+        kubernetes_velero_volume_backups: false
+        kubernetes_velero_schedule: ""
 
     - name: Verify the Traefik values for a LoadBalancer service
       ansible.builtin.assert:

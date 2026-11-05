@@ -127,7 +127,7 @@ To run an interactive Ubuntu pod from the image in the local registry, see the
 | [Build your own images](docs/building-images.md) | Skeleton Dockerfiles built into the internal registry |
 | [Import your own images](docs/importing-images.md) | Bringing images from other registries, image files, or a workstation into the internal registry |
 | [Headlamp web UI](docs/headlamp.md) | Opening the cluster web UI, sign-in tokens, network exposure |
-| [Optional add-ons](docs/addons.md) | Traefik ingress, cert-manager and Argo CD |
+| [Optional add-ons](docs/addons.md) | Traefik ingress, cert-manager, Argo CD and Velero backups |
 | [Troubleshooting](docs/troubleshooting.md) | VIP, etcd, joins, Longhorn, registry, Pod Security, upgrades |
 
 ## Observability
@@ -281,7 +281,7 @@ registry; run it while the first control-plane node is available:
 | `etcd_backup` | Install the scheduled etcd backup on controllers |
 | `observability` | Install metrics-server, enable Hubble, install Headlamp, and optionally kube-prometheus-stack |
 | `headlamp` | Install or update the Headlamp web UI |
-| `addons` | Install or update the enabled add-ons: Traefik, cert-manager, Argo CD (see [docs/addons.md](docs/addons.md)) |
+| `addons` | Install or update the enabled add-ons: Traefik, cert-manager, Argo CD, Velero (see [docs/addons.md](docs/addons.md)) |
 | `offline_stage` | Stage the offline package and image bundle (only runs when requested) |
 | `upgrade` | Rolling upgrade; needs `serial: 1`, see `examples/upgrade.yml` (only runs when requested) |
 | `remove_node` | Remove `kubernetes_remove_nodes`; see `examples/remove-node.yml` (only runs when requested) |
@@ -312,14 +312,18 @@ All components are pinned in `defaults/main.yml`:
 | `kubernetes_traefik_version` | `42.3.0` |
 | `kubernetes_cert_manager_version` | `v1.21.3` |
 | `kubernetes_argocd_version` | `10.12.1` |
+| `kubernetes_velero_version` | `12.2.3` |
+| `kubernetes_velero_aws_plugin_version` | `v1.14.4` |
 
 Set a value to `latest` to resolve the newest stable release at runtime
 instead; this is not reproducible and is refused in offline mode. apt holds
 `kubelet`, `kubeadm`, and `kubectl` (`kubernetes_held_packages`), and the role
 never changes installed Kubernetes packages outside the
 [upgrade flow](docs/upgrade.md). [Renovate](https://docs.renovatebot.com/)
-proposes updates of the pinned versions (`renovate.json`; it needs the
-Renovate GitHub app), and Dependabot updates the GitHub Actions.
+proposes updates of the pinned versions (`renovate.json`). It runs weekly from
+`.github/workflows/renovate.yml`, so the Renovate GitHub app is not needed
+(the repository must allow GitHub Actions to create pull requests), and keeps
+a dependency dashboard issue. Dependabot updates the GitHub Actions.
 
 ### Role releases
 

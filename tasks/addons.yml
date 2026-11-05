@@ -7,11 +7,18 @@
       - kubernetes_node_ports_in_use | select('lt', 30000) | list | length == 0
       - kubernetes_node_ports_in_use | select('gt', 32767) | list | length == 0
       - kubernetes_node_ports_in_use | unique | length == kubernetes_node_ports_in_use | length
+      - >-
+        not kubernetes_velero_enabled | bool
+        or (kubernetes_velero_bucket | length > 0
+            and kubernetes_velero_s3_access_key | length > 0
+            and kubernetes_velero_s3_secret_key | length > 0)
     fail_msg: >-
       kubernetes_ingress_service_type must be NodePort or LoadBalancer and
       kubernetes_argocd_service_type ClusterIP or NodePort. Every NodePort of
       the registry, Headlamp and the add-ons must be between 30000 and 32767
       and unique (in use: {{ kubernetes_node_ports_in_use | join(', ') }}).
+      Velero needs kubernetes_velero_bucket, kubernetes_velero_s3_access_key
+      and kubernetes_velero_s3_secret_key.
   run_once: true
 
 - name: Require Helm for the add-on installation
@@ -29,6 +36,35 @@
       on {{ kubernetes_first_controller }}. Run the role with the helm tag
       first; it installs Helm on the controllers.
   when: inventory_hostname == kubernetes_first_controller
+
+# Helm creates the other namespaces; this one needs its Pod Security label
+# before the node agent starts.
+- name: Create the privileged Velero namespace for the node agent
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ kubernetes_admin_kubeconfig }}"
+      - apply
+      - -f
+      - "-"
+    stdin: |
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: {{ kubernetes_velero_namespace }}
+        labels:
+          pod-security.kubernetes.io/enforce: privileged
+          pod-security.kubernetes.io/audit: privileged
+          pod-security.kubernetes.io/warn: privileged
+  register: kubernetes_velero_namespace_apply
+  changed_when: >-
+    'created' in kubernetes_velero_namespace_apply.stdout
+    or 'configured' in kubernetes_velero_namespace_apply.stdout
+  when:
+    - inventory_hostname == kubernetes_first_controller
+    - kubernetes_velero_enabled | bool
+    - kubernetes_velero_volume_backups | bool
 
 - name: Install or upgrade the enabled add-ons
   ansible.builtin.include_tasks: helm_release.yml
