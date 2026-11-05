@@ -1,0 +1,16 @@
+---
+# Build an offline bundle without a cluster, on one Ubuntu host or container
+# with internet access (same release and architecture as the offline nodes):
+#   ansible-playbook -i localhost, -c local examples/offline-build.yml
+# Set the same switches (Longhorn, registry, add-ons) and pinned versions as
+# the offline cluster. The bundle is written to /opt/kubernetes-offline
+# (kubernetes_offline_assets_directory); copy that directory to every node.
+- name: Build an offline bundle without a cluster
+  hosts: all
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Build the bundle
+      ansible.builtin.import_role:
+        name: ansible-role-kubernetes
+        tasks_from: offline_build

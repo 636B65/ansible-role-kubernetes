@@ -1,7 +1,8 @@
 # Offline installation
 
 The role can install a cluster on nodes without internet access, from a
-bundle staged on a cluster that has it. The bundle lives in
+bundle built on a machine that has it: either without a cluster (below), or
+staged on a running cluster. The bundle lives in
 `/opt/kubernetes-offline` (`kubernetes_offline_assets_directory`).
 
 > The offline flow has not been verified end to end on an air-gapped network
@@ -15,7 +16,7 @@ bundle staged on a cluster that has it. The bundle lives in
 | `images/*.tar` | Container images for this node architecture: kubeadm control-plane images, the containerd sandbox image, every image used by running pods, all Longhorn images, and the registry images | `offline_stage` tag |
 | `images/images.txt` | List of the staged image references | `offline_stage` tag |
 | `manifests/` | Longhorn and metrics-server manifests, the Longhorn image list, the Headlamp chart, and the charts of the enabled add-ons (controllers) | `offline_stage` tag |
-| `cilium/`, `cilium-cli/` | Cilium Helm chart and Cilium CLI archives (only with `kubernetes_registry_enabled`) | `registry_images` / `cilium_offline` tags (controllers) |
+| `cilium/`, `cilium-cli/` | Cilium Helm chart and Cilium CLI archives (always when built without a cluster; when staged, only with `kubernetes_registry_enabled`) | `offline_build`, or the `registry_images` / `cilium_offline` tags (controllers) |
 | `helm/` | Helm archive | `helm` tag (controllers) |
 | `VERSIONS` | The component versions and platform of the bundle | `offline_stage` tag |
 
@@ -24,7 +25,46 @@ manifests and images, and with `kubernetes_registry_enabled: false` it leaves
 out the registry images. Stage and install with the same switch values. The
 bundle also contains `cri-tools`, which provides `crictl` for the etcd backup.
 
-## Stage a bundle
+## Build a bundle without a cluster
+
+`examples/offline-build.yml` builds the whole bundle on one Ubuntu host or
+container with internet access, without installing a cluster. It needs the
+same Ubuntu release and CPU architecture as the offline nodes, because the
+packages are resolved for it. In a container (Docker or Podman):
+
+```sh
+docker run --rm \
+  -v "$PWD:/roles/ansible-role-kubernetes:ro" \
+  -v "$PWD/kubernetes-offline:/opt/kubernetes-offline" \
+  ubuntu:26.04 bash -euc '
+    apt-get update -q
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends ansible-core python3-apt
+    ANSIBLE_ROLES_PATH=/roles ansible-playbook -i localhost, -c local \
+      -e ansible_become=false /roles/ansible-role-kubernetes/examples/offline-build.yml'
+```
+
+Pass the same switches and pinned versions as the offline cluster (for
+example `-e kubernetes_longhorn_enabled=false` or
+`-e kubernetes_velero_enabled=true`). The build:
+
+- downloads every package the role installs, with its dependency closure, at
+  the pinned Kubernetes release (`apt-cache madison`), into `debs/`,
+- computes the image list from the pinned versions instead of running pods:
+  `kubeadm config images list` and containerd's sandbox image (unpacked from
+  the staged packages, not installed), the Cilium chart rendered with the same
+  values the offline bootstrap uses, the metrics-server manifest, the Longhorn
+  image list, the registry and Headlamp images, the rendered charts of the
+  enabled add-ons and `kubernetes_offline_extra_images`, and saves them with
+  Skopeo,
+- downloads the Helm and Cilium CLI archives, the Cilium chart, and the
+  Longhorn, metrics-server, Headlamp and add-on manifests and charts,
+- writes `images/images.txt` and `VERSIONS`.
+
+The `kubernetes-offline` directory is the bundle; copy it to
+`/opt/kubernetes-offline` on every node (or let the terraform-kubernetes
+templates do it). CI builds a bundle this way every week.
+
+## Stage a bundle on a cluster
 
 Stage on a working cluster that runs the same Debian or Ubuntu release, the
 same CPU architecture, and the same pinned versions as the offline cluster.

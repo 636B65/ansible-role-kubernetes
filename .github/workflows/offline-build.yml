@@ -1,0 +1,67 @@
+name: Offline bundle build
+
+# Builds a complete offline bundle without a cluster (examples/offline-build.yml)
+# in an Ubuntu 26.04 container, with every add-on enabled, and checks its
+# contents. Runs weekly, by hand, and on branches that change the offline
+# tasks.
+
+on:
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+  push:
+    branches-ignore: [main]
+    paths:
+      - tasks/offline_*.yml
+      - tasks/versions.yml
+      - tasks/kubernetes_repository.yml
+      - templates/kubernetes-offline-stage-debs.sh.j2
+      - examples/offline-build.yml
+      - .github/workflows/offline-build.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the bundle in an Ubuntu 26.04 container
+        run: |
+          mkdir -p "$RUNNER_TEMP/bundle"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/roles/ansible-role-kubernetes:ro" \
+            -v "$RUNNER_TEMP/bundle:/opt/kubernetes-offline" \
+            ubuntu:26.04 bash -euc '
+              apt-get update -q
+              DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends ansible-core python3-apt
+              ANSIBLE_ROLES_PATH=/roles ansible-playbook -i localhost, -c local \
+                -e ansible_become=false \
+                -e kubernetes_ingress_enabled=true \
+                -e kubernetes_cert_manager_enabled=true \
+                -e kubernetes_argocd_enabled=true \
+                -e kubernetes_velero_enabled=true \
+                /roles/ansible-role-kubernetes/examples/offline-build.yml'
+
+      - name: Check the bundle
+        run: |
+          bundle="$RUNNER_TEMP/bundle"
+          sudo chown -R "$(id -u):$(id -g)" "$bundle"
+          cat "$bundle/VERSIONS"
+          echo "== images"; cat "$bundle/images/images.txt"
+          echo "== charts and archives"; ls "$bundle/manifests" "$bundle/helm" "$bundle/cilium" "$bundle/cilium-cli"
+          version="$(sed -n 's/^kubernetes_version: "\(.*\)"$/\1/p' "$bundle/VERSIONS")"
+          for package in kubelet kubeadm kubectl; do
+            ls "$bundle/debs/${package}_${version}-"*.deb
+          done
+          test -s "$bundle/debs/Packages"
+          for image in kube-apiserver kube-proxy etcd coredns pause cilium hubble-relay \
+                       metrics-server longhorn-manager headlamp traefik cert-manager-controller \
+                       argocd velero velero-plugin-for-aws kubectl; do
+            grep -q "/$image:" "$bundle/images/images.txt" || { echo "missing image: $image"; exit 1; }
+          done
+          test "$(find "$bundle/images" -name '*.tar' | wc -l)" -eq "$(wc -l < "$bundle/images/images.txt")"
+          du -sh "$bundle" "$bundle"/*

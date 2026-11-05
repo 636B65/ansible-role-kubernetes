@@ -1,0 +1,69 @@
+---
+# Manifests and Helm charts of the offline bundle. Used by offline_stage.yml
+# (on a cluster; charts on the controllers) and offline_build.yml (without a
+# cluster, kubernetes_offline_build).
+- name: Stage the pinned Longhorn and metrics-server manifests
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: >-
+    {{
+      (
+        [
+          {
+            'url': 'https://raw.githubusercontent.com/longhorn/longhorn/v' ~ kubernetes_longhorn_resolved_version ~ '/deploy/longhorn.yaml',
+            'dest': kubernetes_longhorn_manifest
+          },
+          {
+            'url': 'https://raw.githubusercontent.com/longhorn/longhorn/v' ~ kubernetes_longhorn_resolved_version ~ '/deploy/longhorn-images.txt',
+            'dest': kubernetes_longhorn_images_list
+          }
+        ] if kubernetes_longhorn_enabled else []
+      )
+      + [
+        {
+          'url': 'https://github.com/kubernetes-sigs/metrics-server/releases/download/' ~ kubernetes_metrics_server_resolved_version ~ '/components.yaml',
+          'dest': kubernetes_metrics_server_manifest
+        }
+      ]
+    }}
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: Stage the pinned Headlamp Helm chart
+  ansible.builtin.command:
+    argv:
+      - helm
+      - pull
+      - headlamp
+      - --repo
+      - https://kubernetes-sigs.github.io/headlamp/
+      - --version
+      - "{{ kubernetes_headlamp_version }}"
+      - --destination
+      - "{{ kubernetes_offline_manifests_directory }}"
+    creates: "{{ kubernetes_headlamp_chart_archive }}"
+  when:
+    - kubernetes_headlamp_enabled
+    - kubernetes_offline_build | default(false) or inventory_hostname in groups[kubernetes_control_plane_group]
+
+- name: Stage the pinned Helm charts of the enabled add-ons
+  ansible.builtin.command:
+    argv:
+      - helm
+      - pull
+      - "{{ item.chart }}"
+      - --repo
+      - "{{ item.repo }}"
+      - --version
+      - "{{ item.version }}"
+      - --destination
+      - "{{ kubernetes_offline_manifests_directory }}"
+    creates: "{{ kubernetes_offline_manifests_directory }}/{{ item.chart }}-{{ item.version }}.tgz"
+  loop: "{{ kubernetes_addons_enabled }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: kubernetes_offline_build | default(false) or inventory_hostname in groups[kubernetes_control_plane_group]

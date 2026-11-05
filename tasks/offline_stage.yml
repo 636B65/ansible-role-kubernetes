@@ -40,71 +40,8 @@
     cmd: /usr/local/sbin/kubernetes-offline-stage-debs
   changed_when: true
 
-- name: Stage the pinned Longhorn and metrics-server manifests
-  ansible.builtin.get_url:
-    url: "{{ item.url }}"
-    dest: "{{ item.dest }}"
-    owner: root
-    group: root
-    mode: "0644"
-  loop: >-
-    {{
-      (
-        [
-          {
-            'url': 'https://raw.githubusercontent.com/longhorn/longhorn/v' ~ kubernetes_longhorn_resolved_version ~ '/deploy/longhorn.yaml',
-            'dest': kubernetes_longhorn_manifest
-          },
-          {
-            'url': 'https://raw.githubusercontent.com/longhorn/longhorn/v' ~ kubernetes_longhorn_resolved_version ~ '/deploy/longhorn-images.txt',
-            'dest': kubernetes_longhorn_images_list
-          }
-        ] if kubernetes_longhorn_enabled else []
-      )
-      + [
-        {
-          'url': 'https://github.com/kubernetes-sigs/metrics-server/releases/download/' ~ kubernetes_metrics_server_resolved_version ~ '/components.yaml',
-          'dest': kubernetes_metrics_server_manifest
-        }
-      ]
-    }}
-  loop_control:
-    label: "{{ item.dest }}"
-
-- name: Stage the pinned Headlamp Helm chart on controllers
-  ansible.builtin.command:
-    argv:
-      - helm
-      - pull
-      - headlamp
-      - --repo
-      - https://kubernetes-sigs.github.io/headlamp/
-      - --version
-      - "{{ kubernetes_headlamp_version }}"
-      - --destination
-      - "{{ kubernetes_offline_manifests_directory }}"
-    creates: "{{ kubernetes_headlamp_chart_archive }}"
-  when:
-    - kubernetes_headlamp_enabled
-    - inventory_hostname in groups[kubernetes_control_plane_group]
-
-- name: Stage the pinned Helm charts of the enabled add-ons on controllers
-  ansible.builtin.command:
-    argv:
-      - helm
-      - pull
-      - "{{ item.chart }}"
-      - --repo
-      - "{{ item.repo }}"
-      - --version
-      - "{{ item.version }}"
-      - --destination
-      - "{{ kubernetes_offline_manifests_directory }}"
-    creates: "{{ kubernetes_offline_manifests_directory }}/{{ item.chart }}-{{ item.version }}.tgz"
-  loop: "{{ kubernetes_addons_enabled }}"
-  loop_control:
-    label: "{{ item.name }}"
-  when: inventory_hostname in groups[kubernetes_control_plane_group]
+- name: Stage the manifests and Helm charts
+  ansible.builtin.import_tasks: offline_manifests.yml
 
 - name: List the control-plane images for the pinned Kubernetes release
   ansible.builtin.command:
@@ -180,53 +117,5 @@
       }}
   run_once: true
 
-- name: Normalize the offline image references
-  ansible.builtin.set_fact:
-    kubernetes_offline_images: "{{ (kubernetes_offline_images | default([]) + [kubernetes_image_ref_qualified]) | unique }}"
-  vars:
-    kubernetes_image_ref: "{{ item }}"
-  loop: "{{ kubernetes_offline_raw_images }}"
-
-- name: Save the images as archives for this node architecture
-  ansible.builtin.shell:
-    cmd: >-
-      rm -f {{ (kubernetes_image_archive ~ '.part') | quote }}
-      && skopeo copy --retry-times 3 --override-arch {{ kubernetes_architecture | quote }}
-      {{ ('docker://' ~ item) | quote }}
-      {{ ('docker-archive:' ~ kubernetes_image_archive ~ '.part:' ~ item) | quote }}
-      && mv {{ (kubernetes_image_archive ~ '.part') | quote }} {{ kubernetes_image_archive | quote }}
-    creates: "{{ kubernetes_image_archive }}"
-  vars:
-    kubernetes_image_ref: "{{ item }}"
-  loop: "{{ kubernetes_offline_images }}"
-  register: kubernetes_offline_image_archives
-  retries: 3
-  delay: 10
-  until: kubernetes_offline_image_archives.rc == 0
-
-- name: Record the staged images and component versions
-  ansible.builtin.copy:
-    dest: "{{ item.dest }}"
-    content: "{{ item.content }}"
-    owner: root
-    group: root
-    mode: "0644"
-  loop:
-    - dest: "{{ kubernetes_offline_images_list }}"
-      content: "{{ kubernetes_offline_images | join('\n') }}\n"
-    - dest: "{{ kubernetes_offline_assets_directory }}/VERSIONS"
-      content: |
-        kubernetes_version: "{{ kubernetes_resolved_version }}"
-        kubernetes_cilium_version: "{{ kubernetes_cilium_resolved_version }}"
-        kubernetes_cilium_cli_version: "{{ kubernetes_cilium_cli_resolved_version }}"
-        kubernetes_helm_version: "{{ kubernetes_helm_resolved_version }}"
-        kubernetes_longhorn_enabled: {{ kubernetes_longhorn_enabled | bool | lower }}
-        kubernetes_registry_enabled: {{ kubernetes_registry_enabled | bool | lower }}
-        {% if kubernetes_longhorn_enabled %}
-        kubernetes_longhorn_version: "{{ kubernetes_longhorn_resolved_version }}"
-        {% endif %}
-        kubernetes_metrics_server_version: "{{ kubernetes_metrics_server_resolved_version }}"
-        architecture: "{{ kubernetes_architecture }}"
-        distribution: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
-  loop_control:
-    label: "{{ item.dest }}"
+- name: Save the images and record the bundle contents
+  ansible.builtin.import_tasks: offline_save.yml

@@ -1,0 +1,53 @@
+---
+# Saves the images in kubernetes_offline_raw_images and writes images.txt and
+# VERSIONS. Used by offline_stage.yml and offline_build.yml.
+- name: Normalize the offline image references
+  ansible.builtin.set_fact:
+    kubernetes_offline_images: "{{ (kubernetes_offline_images | default([]) + [kubernetes_image_ref_qualified]) | unique }}"
+  vars:
+    kubernetes_image_ref: "{{ item }}"
+  loop: "{{ kubernetes_offline_raw_images }}"
+
+- name: Save the images as archives for this node architecture
+  ansible.builtin.shell:
+    cmd: >-
+      rm -f {{ (kubernetes_image_archive ~ '.part') | quote }}
+      && skopeo copy --retry-times 3 --override-arch {{ kubernetes_architecture | quote }}
+      {{ ('docker://' ~ item) | quote }}
+      {{ ('docker-archive:' ~ kubernetes_image_archive ~ '.part:' ~ item) | quote }}
+      && mv {{ (kubernetes_image_archive ~ '.part') | quote }} {{ kubernetes_image_archive | quote }}
+    creates: "{{ kubernetes_image_archive }}"
+  vars:
+    kubernetes_image_ref: "{{ item }}"
+  loop: "{{ kubernetes_offline_images }}"
+  register: kubernetes_offline_image_archives
+  retries: 3
+  delay: 10
+  until: kubernetes_offline_image_archives.rc == 0
+
+- name: Record the staged images and component versions
+  ansible.builtin.copy:
+    dest: "{{ item.dest }}"
+    content: "{{ item.content }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - dest: "{{ kubernetes_offline_images_list }}"
+      content: "{{ kubernetes_offline_images | join('\n') }}\n"
+    - dest: "{{ kubernetes_offline_assets_directory }}/VERSIONS"
+      content: |
+        kubernetes_version: "{{ kubernetes_resolved_version }}"
+        kubernetes_cilium_version: "{{ kubernetes_cilium_resolved_version }}"
+        kubernetes_cilium_cli_version: "{{ kubernetes_cilium_cli_resolved_version }}"
+        kubernetes_helm_version: "{{ kubernetes_helm_resolved_version }}"
+        kubernetes_longhorn_enabled: {{ kubernetes_longhorn_enabled | bool | lower }}
+        kubernetes_registry_enabled: {{ kubernetes_registry_enabled | bool | lower }}
+        {% if kubernetes_longhorn_enabled %}
+        kubernetes_longhorn_version: "{{ kubernetes_longhorn_resolved_version }}"
+        {% endif %}
+        kubernetes_metrics_server_version: "{{ kubernetes_metrics_server_resolved_version }}"
+        architecture: "{{ kubernetes_architecture }}"
+        distribution: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
+  loop_control:
+    label: "{{ item.dest }}"

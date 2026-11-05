@@ -66,6 +66,7 @@ jobs:
           sudo nft --check --file "$output/kubernetes-firewall.nft"
           shellcheck "$output/kubernetes-etcd-backup.sh" \
             "$output/kubernetes-offline-stage-debs.sh" \
+            "$output/kubernetes-offline-build-debs.sh" \
             tests/idempotence.sh \
             .github/scripts/changelog.sh
 

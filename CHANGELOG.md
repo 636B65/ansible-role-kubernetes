@@ -6,6 +6,25 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-11-05
+
+### Added
+
+- Build the offline bundle without a cluster: `examples/offline-build.yml`
+  (`tasks_from: offline_build`) runs on one Ubuntu host or container with
+  internet access and produces the same bundle as the `offline_stage` tag.
+  Packages are pinned from the repositories, and the image list is computed
+  from kubeadm, containerd, the rendered Cilium and add-on charts and the
+  pinned manifests instead of from running pods. It always includes the
+  Cilium chart and CLI. A weekly CI job builds a bundle with every add-on and
+  checks it.
+
+### Changed
+
+- The manifest, chart and image saving steps of `offline_stage` moved to
+  `tasks/offline_manifests.yml` and `tasks/offline_save.yml`, shared with the
+  new build; their behavior is unchanged.
+
 ## [3.3.0] - 2026-11-05
 
 ### Added

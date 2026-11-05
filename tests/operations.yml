@@ -55,6 +55,24 @@
         - kubernetes-etcd-backup.sh
         - kubernetes-offline-stage-debs.sh
 
+    - name: Render the offline package script for a bundle build without a cluster
+      ansible.builtin.template:
+        src: "{{ role_root }}/templates/kubernetes-offline-stage-debs.sh.j2"
+        dest: "{{ test_output_dir }}/kubernetes-offline-build-debs.sh"
+        mode: "0700"
+      vars:
+        kubernetes_offline_build: true
+
+    - name: Verify that the build script pins the release from the repositories
+      ansible.builtin.assert:
+        that:
+          - "'apt-cache madison' in test_build_script"
+          - "'release=1.36.5' in test_build_script"
+          - "'dpkg-query' not in test_build_script"
+          - "'dpkg-query' in lookup('file', test_output_dir ~ '/kubernetes-offline-stage-debs.sh')"
+      vars:
+        test_build_script: "{{ lookup('file', test_output_dir ~ '/kubernetes-offline-build-debs.sh') }}"
+
     - name: Render the encryption configuration in prepare mode
       ansible.builtin.template:
         src: "{{ role_root }}/templates/encryption-config.yaml.j2"
@@ -122,6 +140,7 @@
       loop:
         - kubernetes-etcd-backup.sh
         - kubernetes-offline-stage-debs.sh
+        - kubernetes-offline-build-debs.sh
 
     - name: Normalize image references for the offline bundle
       ansible.builtin.set_fact:

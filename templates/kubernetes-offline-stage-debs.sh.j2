@@ -34,6 +34,20 @@ for package in "${closure[@]}"; do
     fi
 done
 
+{% if kubernetes_offline_build | default(false) %}
+# Replace the candidate Kubernetes packages with the pinned release
+# ({{ kubernetes_resolved_version }}); nothing is installed on this build host.
+for package in "${pinned_packages[@]}"; do
+    version="$(apt-cache madison "${package}" | awk -v release={{ kubernetes_resolved_version | quote }} \
+        '{ split($3, v, "-") } v[1] == release { print $3; exit }')"
+    if [ -z "${version}" ]; then
+        echo "No ${package} {{ kubernetes_resolved_version }} in the package repositories." >&2
+        exit 1
+    fi
+    rm -f "${package}"_*.deb
+    apt-get download "${package}=${version}"
+done
+{% else %}
 # Replace the candidate Kubernetes packages with the versions installed on
 # this node, which the role pinned.
 for package in "${pinned_packages[@]}"; do
@@ -41,6 +55,7 @@ for package in "${pinned_packages[@]}"; do
     rm -f "${package}"_*.deb
     apt-get download "${package}=${version}"
 done
+{% endif %}
 
 apt-ftparchive packages . > Packages
 gzip -9 --keep --force Packages

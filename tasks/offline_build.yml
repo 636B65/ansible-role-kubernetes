@@ -1,0 +1,247 @@
+---
+# Builds the offline bundle without a cluster, on one Ubuntu host or container
+# with internet access that runs the same release and architecture as the
+# offline nodes (see examples/offline-build.yml and docs/offline.md). It
+# produces the same layout as the offline_stage tag: packages from the
+# repositories, and images computed from the pinned versions and the rendered
+# charts instead of from running pods. Nothing is installed or started apart
+# from the build tools.
+- name: Refuse to build a bundle in offline mode
+  ansible.builtin.assert:
+    that:
+      - not kubernetes_offline_mode
+      - ansible_os_family == "Debian"
+    fail_msg: Build the offline bundle on a Debian-family host with internet access.
+
+- name: Mark this run as an offline bundle build
+  ansible.builtin.set_fact:
+    kubernetes_offline_build: true
+    kubernetes_offline_build_directory: /tmp/kubernetes-offline-build
+
+- name: Resolve the component versions
+  ansible.builtin.import_tasks: versions.yml
+
+- name: Use the repository of the pinned Kubernetes minor release
+  ansible.builtin.set_fact:
+    kubernetes_repository_target_minor: "{{ kubernetes_resolved_minor }}"
+
+- name: Install the tools used to build the offline bundle
+  ansible.builtin.apt:
+    name:
+      - apt-utils
+      - ca-certificates
+      - curl
+      - gpg
+      - skopeo
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configure the Kubernetes package repository
+  ansible.builtin.import_tasks: kubernetes_repository.yml
+
+- name: Create the offline bundle directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ kubernetes_offline_debs_directory }}"
+    - "{{ kubernetes_offline_images_directory }}"
+    - "{{ kubernetes_offline_manifests_directory }}"
+    - "{{ kubernetes_offline_assets_directory }}/helm"
+    - "{{ kubernetes_offline_assets_directory }}/cilium"
+    - "{{ kubernetes_offline_assets_directory }}/cilium-cli"
+    - "{{ kubernetes_offline_build_directory }}"
+
+- name: Install the offline package staging script
+  ansible.builtin.template:
+    src: kubernetes-offline-stage-debs.sh.j2
+    dest: /usr/local/sbin/kubernetes-offline-stage-debs
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Stage the Debian packages and their dependencies
+  ansible.builtin.command:
+    cmd: /usr/local/sbin/kubernetes-offline-stage-debs
+  changed_when: true
+
+- name: Download the Helm, Cilium CLI and Cilium chart archives
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - url: >-
+        https://get.helm.sh/helm-{{ kubernetes_helm_resolved_version }}-linux-{{ kubernetes_architecture }}.tar.gz
+      dest: >-
+        {{ kubernetes_offline_assets_directory }}/helm/helm-{{
+        kubernetes_helm_resolved_version }}-linux-{{ kubernetes_architecture }}.tar.gz
+    - url: >-
+        https://github.com/cilium/cilium-cli/releases/download/{{
+        kubernetes_cilium_cli_resolved_version }}/cilium-linux-{{ kubernetes_architecture }}.tar.gz
+      dest: "{{ kubernetes_cilium_cli_archive }}"
+    - url: https://raw.githubusercontent.com/cilium/charts/master/cilium-{{ kubernetes_cilium_resolved_version }}.tgz
+      dest: "{{ kubernetes_cilium_chart_archive }}"
+  loop_control:
+    label: "{{ item.dest | basename }}"
+
+- name: Extract Helm for chart rendering
+  ansible.builtin.unarchive:
+    src: >-
+      {{ kubernetes_offline_assets_directory }}/helm/helm-{{
+      kubernetes_helm_resolved_version }}-linux-{{ kubernetes_architecture }}.tar.gz
+    dest: "{{ kubernetes_offline_build_directory }}"
+    remote_src: true
+
+- name: Install Helm on the build host
+  ansible.builtin.copy:
+    src: "{{ kubernetes_offline_build_directory }}/linux-{{ kubernetes_architecture }}/helm"
+    dest: /usr/local/bin/helm
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Stage the manifests and Helm charts
+  ansible.builtin.import_tasks: offline_manifests.yml
+
+# kubeadm and containerd are unpacked from the staged packages, not installed,
+# to read the image references of the pinned release.
+- name: Unpack kubeadm and containerd from the staged packages
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail
+      && for package in kubeadm {{ containerd_package | quote }}; do
+      dpkg-deb -x "$(ls {{ kubernetes_offline_debs_directory | quote }}/"${package}"_*.deb | head -n 1)"
+      {{ (kubernetes_offline_build_directory ~ '/root') | quote }};
+      done
+    executable: /bin/bash
+  changed_when: true
+
+- name: List the control-plane images for the pinned Kubernetes release
+  ansible.builtin.command:
+    argv:
+      - "{{ kubernetes_offline_build_directory }}/root/usr/bin/kubeadm"
+      - config
+      - images
+      - list
+      - --kubernetes-version
+      - "v{{ kubernetes_resolved_version }}"
+  register: kubernetes_offline_kubeadm_images
+  changed_when: false
+
+- name: Read the default containerd configuration for its sandbox image
+  ansible.builtin.command:
+    argv:
+      - "{{ kubernetes_offline_build_directory }}/root/usr/bin/containerd"
+      - config
+      - default
+  register: kubernetes_offline_containerd_default
+  changed_when: false
+
+# The same values the bootstrap passes to cilium install in offline mode, so
+# the rendered (tag-only) references match the images the nodes import.
+- name: Render the Cilium chart with the install values
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['helm', 'template', 'cilium', kubernetes_cilium_chart_archive,
+         '--namespace', 'kube-system',
+         '--kube-version', kubernetes_resolved_version]
+        + (
+          (
+            kubernetes_cilium_install_values
+            + (kubernetes_cilium_offline_values if not kubernetes_offline_mode else [])
+          )
+          | unique
+          | map('regex_replace', '^', '--set=')
+          | list
+        )
+      }}
+  register: kubernetes_offline_cilium_rendered
+  changed_when: false
+
+- name: Render the charts of the enabled add-ons
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail
+      && printf '%s' {{ (item['values'] | to_json) | quote }}
+      | helm template {{ item.name | quote }}
+      {{ (kubernetes_offline_manifests_directory ~ '/' ~ item.chart ~ '-' ~ item.version ~ '.tgz') | quote }}
+      --namespace {{ item.namespace | quote }}
+      --kube-version {{ kubernetes_resolved_version | quote }}
+      --values -
+    executable: /bin/bash
+  loop: "{{ kubernetes_addons_enabled }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: kubernetes_offline_addons_rendered
+  changed_when: false
+  no_log: "{{ item.sensitive | default(false) }}"
+
+- name: Read the metrics-server manifest
+  ansible.builtin.slurp:
+    src: "{{ kubernetes_metrics_server_manifest }}"
+  register: kubernetes_offline_metrics_server_manifest
+
+- name: Read the Longhorn image list
+  ansible.builtin.slurp:
+    src: "{{ kubernetes_longhorn_images_list }}"
+  register: kubernetes_offline_longhorn_images
+  when: kubernetes_longhorn_enabled
+
+- name: Collect every image reference for the offline bundle
+  ansible.builtin.set_fact:
+    kubernetes_offline_raw_images: >-
+      {{
+        (
+          kubernetes_offline_kubeadm_images.stdout_lines
+          + (
+            kubernetes_offline_containerd_default.stdout
+            | regex_findall('(?m)^\s*sandbox(?:_image)?\s*=\s*["\']([^"\']+)["\']')
+          )
+          + (kubernetes_offline_cilium_rendered.stdout | regex_findall(kubernetes_offline_image_pattern))
+          + (
+            kubernetes_offline_addons_rendered.results
+            | map(attribute='stdout')
+            | map('regex_findall', kubernetes_offline_image_pattern)
+            | flatten
+          )
+          + (
+            kubernetes_offline_metrics_server_manifest.content | b64decode
+            | regex_findall(kubernetes_offline_image_pattern)
+          )
+          + (
+            (kubernetes_offline_longhorn_images.content | b64decode).splitlines()
+            if kubernetes_longhorn_enabled else []
+          )
+          + (kubernetes_registry_images | map(attribute='source') | list if kubernetes_registry_enabled else [])
+          + ([kubernetes_registry_image] if kubernetes_registry_enabled else [])
+          + ([kubernetes_headlamp_image] if kubernetes_headlamp_enabled else [])
+          + ([kubernetes_velero_kubectl_image] if kubernetes_velero_enabled | bool else [])
+          + kubernetes_offline_extra_images
+        )
+        | map('trim')
+        | select('match', kubernetes_offline_image_reference)
+        | unique
+        | list
+      }}
+  vars:
+    kubernetes_offline_image_pattern: '(?m)^\s*-?\s*image:\s*"?([^"\s]+)'
+    # A registry path with a tag or digest; skips rendered values that are not
+    # image references (e.g. "image: {}").
+    kubernetes_offline_image_reference: '^[a-z0-9][a-z0-9._-]*(:[0-9]+)?(/[a-z0-9._-]+)*(:[A-Za-z0-9._-]+)?(@sha256:[0-9a-f]{64})?$'
+
+- name: Save the images and record the bundle contents
+  ansible.builtin.import_tasks: offline_save.yml
+
+- name: Remove the build directory
+  ansible.builtin.file:
+    path: "{{ kubernetes_offline_build_directory }}"
+    state: absent
