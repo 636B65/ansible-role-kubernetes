@@ -6,6 +6,18 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-11-06
+
+### Fixed
+
+- Offline installs: Hubble UI stayed Pending, because the Cilium chart still
+  rendered its frontend and backend images with pinned digests, which the
+  images imported from the bundle do not match, so containerd tried to pull
+  them. `hubble.ui.frontend` and `hubble.ui.backend` now use tag-only
+  references in offline mode like the other Cilium images, and the bundle
+  build check fails on any digest reference. Found by the offline end-to-end
+  test of terraform-kubernetes.
+
 ## [3.4.0] - 2026-11-05
 
 ### Added

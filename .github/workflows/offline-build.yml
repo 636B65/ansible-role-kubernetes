@@ -58,10 +58,15 @@ jobs:
             ls "$bundle/debs/${package}_${version}-"*.deb
           done
           test -s "$bundle/debs/Packages"
-          for image in kube-apiserver kube-proxy etcd coredns pause cilium hubble-relay \
+          for image in kube-apiserver kube-proxy etcd coredns pause cilium hubble-relay hubble-ui hubble-ui-backend \
                        metrics-server longhorn-manager headlamp traefik cert-manager-controller \
                        argocd velero velero-plugin-for-aws kubectl; do
             grep -q "/$image:" "$bundle/images/images.txt" || { echo "missing image: $image"; exit 1; }
           done
           test "$(find "$bundle/images" -name '*.tar' | wc -l)" -eq "$(wc -l < "$bundle/images/images.txt")"
+          # Offline, the charts must render tag-only references: an image
+          # imported from the bundle does not match a pinned digest.
+          if grep -n '@sha256:' "$bundle/images/images.txt"; then
+            echo "digest references in the bundle image list"; exit 1
+          fi
           du -sh "$bundle" "$bundle"/*

@@ -49,6 +49,8 @@ kubernetes_cilium_offline_values:
   - image.useDigest=false
   - operator.image.useDigest=false
   - hubble.relay.image.useDigest=false
+  - hubble.ui.frontend.image.useDigest=false
+  - hubble.ui.backend.image.useDigest=false
   - envoy.image.useDigest=false
   - certgen.image.useDigest=false
   - clustermesh.apiserver.image.useDigest=false

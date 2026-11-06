@@ -206,6 +206,8 @@
       ansible.builtin.assert:
         that:
           - "'image.useDigest=false' in kubernetes_cilium_install_values"
+          - "'hubble.ui.frontend.image.useDigest=false' in kubernetes_cilium_install_values"
+          - "'hubble.ui.backend.image.useDigest=false' in kubernetes_cilium_install_values"
       vars:
         kubernetes_offline_mode: true
 
