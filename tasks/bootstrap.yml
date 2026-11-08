@@ -172,6 +172,11 @@
     owner: root
     group: root
     mode: "0644"
+    timeout: "{{ kubernetes_download_timeout }}"
+  register: kubernetes_download_cilium_cli
+  until: kubernetes_download_cilium_cli is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   when:
     - inventory_hostname == groups[kubernetes_control_plane_group][0]
     - not kubernetes_offline_mode

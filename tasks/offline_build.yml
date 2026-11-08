@@ -76,6 +76,11 @@
     owner: root
     group: root
     mode: "0644"
+    timeout: "{{ kubernetes_download_timeout }}"
+  register: kubernetes_download_offline_build
+  until: kubernetes_download_offline_build is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   loop:
     - url: >-
         https://get.helm.sh/helm-{{ kubernetes_helm_resolved_version }}-linux-{{ kubernetes_architecture }}.tar.gz

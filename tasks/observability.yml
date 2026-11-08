@@ -19,6 +19,11 @@
     owner: root
     group: root
     mode: "0644"
+    timeout: "{{ kubernetes_download_timeout }}"
+  register: kubernetes_download_metrics_server
+  until: kubernetes_download_metrics_server is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   when:
     - inventory_hostname == kubernetes_first_controller
     - kubernetes_metrics_server_enabled

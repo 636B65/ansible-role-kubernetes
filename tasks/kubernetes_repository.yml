@@ -15,6 +15,11 @@
     owner: root
     group: root
     mode: "0644"
+    timeout: "{{ kubernetes_download_timeout }}"
+  register: kubernetes_download_apt_key
+  until: kubernetes_download_apt_key is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   when: not kubernetes_offline_mode
 
 - name: Configure the Kubernetes package repository for the target minor release

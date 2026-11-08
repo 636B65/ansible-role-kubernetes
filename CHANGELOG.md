@@ -6,6 +6,22 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-11-08
+
+### Added
+
+- `kubernetes_download_retries` (default 5), `kubernetes_download_delay`
+  (15 seconds) and `kubernetes_download_timeout` (60 seconds per try).
+
+### Changed
+
+- Downloads from upstream are retried instead of failing the run on the first
+  error: the Cilium CLI, Helm, the metrics-server and Longhorn manifests, the
+  Cilium chart of the offline build, the Kubernetes apt key, and the release
+  lookups for versions set to `latest`. Their timeout was 10 seconds
+  (30 for the lookups). Found when a GitHub outage made the end-to-end tests of
+  terraform-kubernetes time out on the Cilium CLI download.
+
 ## [3.4.1] - 2026-11-06
 
 ### Fixed

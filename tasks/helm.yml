@@ -27,6 +27,11 @@
       {{ kubernetes_offline_assets_directory }}/helm/helm-{{
       kubernetes_helm_resolved_version }}-linux-{{ kubernetes_architecture }}.tar.gz
     mode: "0644"
+    timeout: "{{ kubernetes_download_timeout }}"
+  register: kubernetes_download_helm
+  until: kubernetes_download_helm is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   when:
     - inventory_hostname in groups[kubernetes_control_plane_group]
     - not kubernetes_offline_mode

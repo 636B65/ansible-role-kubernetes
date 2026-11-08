@@ -51,6 +51,11 @@
     owner: root
     group: root
     mode: "0644"
+    timeout: "{{ kubernetes_download_timeout }}"
+  register: kubernetes_download_longhorn_manifest
+  until: kubernetes_download_longhorn_manifest is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   when:
     - inventory_hostname == kubernetes_registry_node
     - not kubernetes_offline_mode
