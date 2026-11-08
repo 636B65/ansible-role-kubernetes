@@ -99,6 +99,11 @@
     owner: root
     group: root
     mode: "0644"
+    timeout: "{{ kubernetes_download_timeout }}"
+  register: kubernetes_download_cilium_cli_offline
+  until: kubernetes_download_cilium_cli_offline is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   when:
     - inventory_hostname in groups[kubernetes_control_plane_group]
     - not kubernetes_offline_mode

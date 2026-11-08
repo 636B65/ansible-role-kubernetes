@@ -247,6 +247,18 @@ argument_specs:
         type: str
         description: GitHub API URL used to resolve Helm when kubernetes_helm_version is "latest".
         default: https://api.github.com/repos/helm/helm/releases?per_page=100
+      kubernetes_download_retries:
+        type: int
+        description: How many times a download from upstream is tried before the run fails.
+        default: 5
+      kubernetes_download_delay:
+        type: int
+        description: Seconds to wait between tries of a failed download.
+        default: 15
+      kubernetes_download_timeout:
+        type: int
+        description: Timeout of one download try, in seconds.
+        default: 60
       kubernetes_offline_mode:
         type: bool
         description: Install from the staged offline bundle instead of the internet.

@@ -18,8 +18,11 @@
   ansible.builtin.uri:
     url: https://dl.k8s.io/release/stable.txt
     return_content: true
-    timeout: 30
+    timeout: "{{ kubernetes_download_timeout }}"
   register: kubernetes_stable_release
+  until: kubernetes_stable_release is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   run_once: true
   when: kubernetes_version == 'latest'
 
@@ -29,8 +32,11 @@
     return_content: true
     headers:
       Accept: application/vnd.github+json
-    timeout: 30
+    timeout: "{{ kubernetes_download_timeout }}"
   register: kubernetes_cilium_latest_release
+  until: kubernetes_cilium_latest_release is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   run_once: true
   when: kubernetes_cilium_version == 'latest'
 
@@ -40,8 +46,11 @@
     return_content: true
     headers:
       Accept: application/vnd.github+json
-    timeout: 30
+    timeout: "{{ kubernetes_download_timeout }}"
   register: kubernetes_cilium_cli_latest_release
+  until: kubernetes_cilium_cli_latest_release is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   run_once: true
   when: kubernetes_cilium_cli_version == 'latest'
 
@@ -51,8 +60,11 @@
     return_content: true
     headers:
       Accept: application/vnd.github+json
-    timeout: 30
+    timeout: "{{ kubernetes_download_timeout }}"
   register: kubernetes_helm_releases
+  until: kubernetes_helm_releases is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   run_once: true
   when: kubernetes_helm_version == 'latest'
 
@@ -62,8 +74,11 @@
     return_content: true
     headers:
       Accept: application/vnd.github+json
-    timeout: 30
+    timeout: "{{ kubernetes_download_timeout }}"
   register: kubernetes_longhorn_latest_release
+  until: kubernetes_longhorn_latest_release is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   run_once: true
   when:
     - kubernetes_longhorn_enabled
@@ -75,8 +90,11 @@
     return_content: true
     headers:
       Accept: application/vnd.github+json
-    timeout: 30
+    timeout: "{{ kubernetes_download_timeout }}"
   register: kubernetes_metrics_server_latest_release
+  until: kubernetes_metrics_server_latest_release is succeeded
+  retries: "{{ kubernetes_download_retries }}"
+  delay: "{{ kubernetes_download_delay }}"
   run_once: true
   when: kubernetes_metrics_server_version == 'latest'
 

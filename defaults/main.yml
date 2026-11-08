@@ -106,6 +106,14 @@ kubernetes_registry_builds_force: false
 kubernetes_offline_assets_directory: /opt/kubernetes-offline
 kubernetes_helm_releases_url: https://api.github.com/repos/helm/helm/releases?per_page=100
 
+# Downloads from upstream (GitHub releases and API, raw.githubusercontent.com,
+# get.helm.sh, pkgs.k8s.io, dl.k8s.io) are retried, so that a short outage of
+# one of them does not fail the whole run. Retries is the number of tries in
+# all; delay and timeout (per try) are in seconds.
+kubernetes_download_retries: 5
+kubernetes_download_delay: 15
+kubernetes_download_timeout: 60
+
 # Install from a previously staged offline bundle (see docs/offline.md)
 # instead of upstream package repositories and image registries.
 kubernetes_offline_mode: false
