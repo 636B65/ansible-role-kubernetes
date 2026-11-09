@@ -50,7 +50,7 @@ kubernetes_traefik_version: "42.3.0"
 # renovate: datasource=helm registryUrl=https://charts.jetstack.io depName=cert-manager
 kubernetes_cert_manager_version: "v1.21.3"
 # renovate: datasource=helm registryUrl=https://argoproj.github.io/argo-helm depName=argo-cd
-kubernetes_argocd_version: "10.12.1"
+kubernetes_argocd_version: "10.17.1"
 # renovate: datasource=helm registryUrl=https://vmware-tanzu.github.io/helm-charts depName=velero
 kubernetes_velero_version: "12.2.3"
 # renovate: datasource=docker depName=velero/velero-plugin-for-aws
