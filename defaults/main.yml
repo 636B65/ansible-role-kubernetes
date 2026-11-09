@@ -52,7 +52,7 @@ kubernetes_cert_manager_version: "v1.21.3"
 # renovate: datasource=helm registryUrl=https://argoproj.github.io/argo-helm depName=argo-cd
 kubernetes_argocd_version: "10.12.1"
 # renovate: datasource=helm registryUrl=https://vmware-tanzu.github.io/helm-charts depName=velero
-kubernetes_velero_version: "12.2.3"
+kubernetes_velero_version: "12.2.4"
 # renovate: datasource=docker depName=velero/velero-plugin-for-aws
 kubernetes_velero_aws_plugin_version: "v1.14.4"
 
