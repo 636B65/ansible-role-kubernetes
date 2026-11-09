@@ -46,7 +46,7 @@ kubernetes_prometheus_stack_version: "92.14.0"
 # renovate: datasource=helm registryUrl=https://kubernetes-sigs.github.io/headlamp/ depName=headlamp
 kubernetes_headlamp_version: "0.46.0"
 # renovate: datasource=helm registryUrl=https://traefik.github.io/charts depName=traefik
-kubernetes_traefik_version: "42.3.0"
+kubernetes_traefik_version: "42.3.1"
 # renovate: datasource=helm registryUrl=https://charts.jetstack.io depName=cert-manager
 kubernetes_cert_manager_version: "v1.21.3"
 # renovate: datasource=helm registryUrl=https://argoproj.github.io/argo-helm depName=argo-cd
