@@ -42,7 +42,7 @@ kubernetes_longhorn_version: "1.13.0"
 # renovate: datasource=github-releases depName=kubernetes-sigs/metrics-server
 kubernetes_metrics_server_version: "v0.9.0"
 # renovate: datasource=helm registryUrl=https://prometheus-community.github.io/helm-charts depName=kube-prometheus-stack
-kubernetes_prometheus_stack_version: "92.14.0"
+kubernetes_prometheus_stack_version: "92.22.0"
 # renovate: datasource=helm registryUrl=https://kubernetes-sigs.github.io/headlamp/ depName=headlamp
 kubernetes_headlamp_version: "0.46.0"
 # renovate: datasource=helm registryUrl=https://traefik.github.io/charts depName=traefik
