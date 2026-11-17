@@ -1,0 +1,92 @@
+name: Sign release
+
+# Adds signed assets to a GitHub release:
+#
+#   <repo>-<version>.tar.gz               source archive of the release tag
+#   SHA256SUMS                            its checksum
+#   *.sigstore.json                       Sigstore bundles (cosign, keyless)
+#   <repo>-<version>.intoto.jsonl         SLSA build provenance
+#
+# The release job calls it after it creates a release. Run it by hand with a
+# tag to sign an existing release. How to verify: see SECURITY.md.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to sign, e.g. v1.2.3
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to sign, e.g. v1.2.3
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    name: Build and sign the source archive
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # upload the release assets
+      id-token: write # keyless signing with the workflow's identity
+    outputs:
+      name: ${{ steps.build.outputs.name }}
+      hashes: ${{ steps.build.outputs.hashes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: Build the source archive
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$TAG' is not a version tag such as v1.2.3"
+            exit 1
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null
+          name="${GITHUB_REPOSITORY#*/}-${TAG#v}"
+          mkdir dist
+          git archive --format=tar.gz --prefix="$name/" -o "dist/$name.tar.gz" HEAD
+          (cd dist && sha256sum "$name.tar.gz" > SHA256SUMS && cat SHA256SUMS)
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "hashes=$(base64 -w0 dist/SHA256SUMS)" >> "$GITHUB_OUTPUT"
+
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+
+      - name: Sign with Sigstore
+        working-directory: dist
+        run: |
+          for file in *.tar.gz SHA256SUMS; do
+            cosign sign-blob --yes --bundle "$file.sigstore.json" "$file"
+          done
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+
+  provenance:
+    name: SLSA provenance
+    needs: sign
+    permissions:
+      actions: read # read the workflow run
+      id-token: write # sign the provenance
+      contents: write # upload it to the release
+    # Reusable workflows of the SLSA generator must be referenced by tag.
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.sign.outputs.hashes }}
+      provenance-name: ${{ needs.sign.outputs.name }}.intoto.jsonl
+      upload-assets: true
+      upload-tag-name: ${{ inputs.tag }}

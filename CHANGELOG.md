@@ -6,6 +6,15 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Signed releases: every new release gets a source archive, `SHA256SUMS`,
+  Sigstore signatures (`*.sigstore.json`) and SLSA build provenance
+  (`*.intoto.jsonl`), made by the new `sign-release.yml` workflow. How to
+  verify them is in the new `SECURITY.md`, which also says how to report a
+  vulnerability.
+- OpenSSF Scorecard workflow and README badges.
+
 ## [3.5.0] - 2026-11-08
 
 ### Added
