@@ -15,6 +15,12 @@ All notable changes to this role are documented here. The format follows
   vulnerability.
 - OpenSSF Scorecard workflow and README badges.
 
+### Fixed
+
+- Renovate's pull requests got no checks, because GitHub starts no workflows
+  for pull requests made with the workflow token. The Renovate workflow now
+  starts "CI and release" and "Offline bundle build" on them.
+
 ## [3.5.0] - 2026-11-08
 
 ### Added

@@ -5,8 +5,9 @@ name: Renovate
 # defaults/main.yml as configured in renovate.json, and keeps a dependency
 # dashboard issue. Needs "Allow GitHub Actions to create and approve pull
 # requests" (Settings > Actions > General). Pull requests opened with the
-# workflow token do not start CI by themselves: run "CI and release" by hand on
-# the pull request's branch (workflow_dispatch).
+# workflow token start no workflow runs, so after Renovate this workflow starts
+# "CI and release" and "Offline bundle build" on every open Renovate pull
+# request that has no checks for its current commit yet.
 
 on:
   schedule:
@@ -17,6 +18,7 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: write # start the checks on Renovate's branches
 
 concurrency:
   group: renovate
@@ -36,3 +38,20 @@ jobs:
           RENOVATE_ONBOARDING: "false"
           RENOVATE_REQUIRE_CONFIG: required
           LOG_LEVEL: info
+
+      - name: Start the checks on Renovate's pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr list --state open --json headRefName,headRefOid \
+            --jq '.[] | select(.headRefName | startswith("renovate/")) | "\(.headRefName) \(.headRefOid)"' |
+          while read -r branch sha; do
+            runs="$(gh run list --workflow ci-release.yml --commit "$sha" --json databaseId --jq length)"
+            if [[ "$runs" != "0" ]]; then
+              echo "$branch: already checked"
+              continue
+            fi
+            echo "$branch: starting the checks for $sha"
+            gh workflow run ci-release.yml --ref "$branch"
+            gh workflow run offline-build.yml --ref "$branch"
+          done
