@@ -80,11 +80,14 @@ jobs:
     concurrency:
       group: tag-release
       cancel-in-progress: false
+    outputs:
+      tag: ${{ steps.create.outputs.tag }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
       - name: Create the tag and GitHub Release for a new version
+        id: create
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -103,6 +106,7 @@ jobs:
             --target "${GITHUB_SHA}" \
             --title "${tag}" \
             --notes-file "$RUNNER_TEMP/release-notes.md"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
   release:
     name: Publish GitHub Release
@@ -111,11 +115,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.create.outputs.tag }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
       - name: Create release from version tag
+        id: create
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -131,3 +138,28 @@ jobs:
           else
             gh release create "$TAG_NAME" --generate-notes
           fi
+          echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
+
+  sign-tagged-release:
+    name: Sign the new release
+    needs: tag-release
+    if: needs.tag-release.outputs.tag != ''
+    permissions:
+      contents: write
+      id-token: write
+      actions: read
+    uses: ./.github/workflows/sign-release.yml
+    with:
+      tag: ${{ needs.tag-release.outputs.tag }}
+
+  sign-release:
+    name: Sign the release
+    needs: release
+    if: needs.release.outputs.tag != ''
+    permissions:
+      contents: write
+      id-token: write
+      actions: read
+    uses: ./.github/workflows/sign-release.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}

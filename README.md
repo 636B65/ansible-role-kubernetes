@@ -1,5 +1,9 @@
 # ansible-role-kubernetes
 
+[![CI and release](https://github.com/636B65/ansible-role-kubernetes/actions/workflows/ci-release.yml/badge.svg?branch=main)](https://github.com/636B65/ansible-role-kubernetes/actions/workflows/ci-release.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/636B65/ansible-role-kubernetes/badge)](https://scorecard.dev/viewer/?uri=github.com/636B65/ansible-role-kubernetes)
+[![Latest release](https://img.shields.io/github/v/release/636B65/ansible-role-kubernetes?sort=semver)](https://github.com/636B65/ansible-role-kubernetes/releases/latest)
+
 An Ansible role for installing a Kubernetes cluster with containerd, Cilium,
 HAProxy and Keepalived on the control-plane nodes, plus an internal Docker
 Distribution registry backed by replicated Longhorn storage. Component
