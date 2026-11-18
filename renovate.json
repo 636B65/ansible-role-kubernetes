@@ -4,6 +4,11 @@
   "enabledManagers": ["custom.regex"],
   "vulnerabilityAlerts": { "enabled": false },
   "prHourlyLimit": 0,
+  "postUpgradeTasks": {
+    "commands": [".github/scripts/sync-defaults.sh"],
+    "fileFilters": ["README.md", "meta/argument_specs.yml"],
+    "executionMode": "branch"
+  },
   "customManagers": [
     {
       "customType": "regex",

@@ -77,11 +77,11 @@ argument_specs:
       kubernetes_cilium_version:
         type: str
         description: Cilium release without the leading v, or "latest".
-        default: 1.20.4
+        default: 1.20.5
       kubernetes_cilium_cli_version:
         type: str
         description: Cilium CLI release such as v0.20.1, or "latest".
-        default: v0.20.1
+        default: v0.20.3
       kubernetes_helm_version:
         type: str
         description: Helm v3 release such as v3.22.1, or "latest".
@@ -93,11 +93,11 @@ argument_specs:
       kubernetes_metrics_server_version:
         type: str
         description: metrics-server release such as v0.9.0, or "latest".
-        default: v0.9.0
+        default: v0.9.1
       kubernetes_prometheus_stack_version:
         type: str
         description: kube-prometheus-stack Helm chart version.
-        default: 92.14.0
+        default: 93.4.0
       kubernetes_headlamp_version:
         type: str
         description: Headlamp Helm chart version.
@@ -105,7 +105,7 @@ argument_specs:
       kubernetes_traefik_version:
         type: str
         description: Traefik Helm chart version (ingress add-on).
-        default: 42.3.0
+        default: 42.4.1
       kubernetes_cert_manager_version:
         type: str
         description: cert-manager Helm chart version.
@@ -113,11 +113,11 @@ argument_specs:
       kubernetes_argocd_version:
         type: str
         description: Argo CD (argo-cd) Helm chart version.
-        default: 10.12.1
+        default: 10.18.0
       kubernetes_velero_version:
         type: str
         description: Velero Helm chart version.
-        default: 12.2.3
+        default: 12.2.5
       kubernetes_velero_aws_plugin_version:
         type: str
         description: Version of the Velero plugin for AWS (S3-compatible storage).
@@ -611,11 +611,11 @@ argument_specs:
       kubernetes_cilium_version:
         type: str
         description: Cilium release without the leading v, or "latest".
-        default: 1.20.4
+        default: 1.20.5
       kubernetes_cilium_cli_version:
         type: str
         description: Cilium CLI release such as v0.20.1, or "latest".
-        default: v0.20.1
+        default: v0.20.3
       kubernetes_helm_version:
         type: str
         description: Helm v3 release such as v3.22.1, or "latest".
@@ -627,7 +627,7 @@ argument_specs:
       kubernetes_metrics_server_version:
         type: str
         description: metrics-server release such as v0.9.0, or "latest".
-        default: v0.9.0
+        default: v0.9.1
       kubernetes_held_packages:
         type: list
         description: Packages that apt holds outside the upgrade flow.
