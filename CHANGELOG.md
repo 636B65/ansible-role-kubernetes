@@ -20,6 +20,9 @@ All notable changes to this role are documented here. The format follows
 - Renovate's pull requests got no checks, because GitHub starts no workflows
   for pull requests made with the workflow token. The Renovate workflow now
   starts "CI and release" and "Offline bundle build" on them.
+- Renovate warned on every run that it cannot access vulnerability alerts:
+  the workflow token cannot read Dependabot alerts, and they would not apply
+  to the versions pinned in `defaults/main.yml`. The lookup is now off.
 
 ## [3.5.0] - 2026-11-08
 
