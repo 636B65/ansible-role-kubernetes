@@ -199,6 +199,10 @@
       - --create-namespace
       - --set-string
       - grafana.adminPassword={{ kubernetes_grafana_admin_password }}
+      # helm upgrade does not update CRDs; the chart's upgrade job does, so
+      # new chart versions (such as 92 -> 93) need no manual kubectl apply.
+      - --set
+      - crds.upgradeJob.enabled=true
       - --wait
       - --timeout
       - 15m

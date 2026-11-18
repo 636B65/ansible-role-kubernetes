@@ -15,6 +15,12 @@ All notable changes to this role are documented here. The format follows
   vulnerability.
 - OpenSSF Scorecard workflow and README badges.
 
+### Changed
+
+- kube-prometheus-stack is installed and upgraded with the chart's CRD upgrade
+  job (`crds.upgradeJob.enabled=true`). `helm upgrade` does not update CRDs,
+  so upgrading the chart to a new major version left the old CRDs in place.
+
 ### Fixed
 
 - Renovate's pull requests got no checks, because GitHub starts no workflows
