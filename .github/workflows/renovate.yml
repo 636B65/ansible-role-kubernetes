@@ -46,7 +46,10 @@ jobs:
           gh pr list --state open --json headRefName,headRefOid \
             --jq '.[] | select(.headRefName | startswith("renovate/")) | "\(.headRefName) \(.headRefOid)"' |
           while read -r branch sha; do
-            runs="$(gh run list --workflow ci-release.yml --commit "$sha" --json databaseId --jq length)"
+            # A pull_request run for the bot's pull request is created but
+            # waits for approval (action_required); it does not count.
+            runs="$(gh run list --workflow ci-release.yml --commit "$sha" --json conclusion \
+              --jq '[.[] | select(.conclusion != "action_required")] | length')"
             if [[ "$runs" != "0" ]]; then
               echo "$branch: already checked"
               continue
