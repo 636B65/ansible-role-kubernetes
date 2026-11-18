@@ -82,11 +82,29 @@ jobs:
     permissions:
       actions: read # read the workflow run
       id-token: write # sign the provenance
-      contents: write # upload it to the release
+      contents: write # required by the generator
     # Reusable workflows of the SLSA generator must be referenced by tag.
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: ${{ needs.sign.outputs.hashes }}
       provenance-name: ${{ needs.sign.outputs.name }}.intoto.jsonl
-      upload-assets: true
-      upload-tag-name: ${{ inputs.tag }}
+
+  # The generator's own upload edits the release, which GITHUB_TOKEN may not
+  # do on every repository; adding an asset is allowed.
+  upload-provenance:
+    name: Upload the provenance
+    needs: provenance
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # upload the release asset
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.provenance.outputs.provenance-name }}
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          FILE: ${{ needs.provenance.outputs.provenance-name }}
+        run: gh release upload "$TAG" "$FILE" --clobber --repo "$GITHUB_REPOSITORY"
