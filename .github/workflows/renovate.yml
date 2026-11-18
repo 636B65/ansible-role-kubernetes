@@ -38,6 +38,8 @@ jobs:
           RENOVATE_ONBOARDING: "false"
           RENOVATE_REQUIRE_CONFIG: required
           LOG_LEVEL: info
+          # Only the command in renovate.json's postUpgradeTasks may run.
+          RENOVATE_ALLOWED_COMMANDS: '["^\\.github/scripts/sync-defaults\\.sh$"]'
 
       - name: Start the checks on Renovate's pull requests
         env:

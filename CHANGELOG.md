@@ -6,6 +6,8 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-11-18
+
 ### Added
 
 - Signed releases: every new release gets a source archive, `SHA256SUMS`,
@@ -17,6 +19,15 @@ All notable changes to this role are documented here. The format follows
 
 ### Changed
 
+- Component updates:
+  - Cilium 1.20.4 -> 1.20.5 and the Cilium CLI v0.20.1 -> v0.20.3.
+  - metrics-server v0.9.0 -> v0.9.1.
+  - Velero chart 12.2.3 -> 12.2.5.
+  - Argo CD chart 10.12.1 -> 10.18.0.
+  - Traefik chart 42.3.0 -> 42.4.1.
+  - kube-prometheus-stack chart 92.14.0 -> 93.4.0, with Prometheus Operator
+    v0.95.1. Its CRDs are updated by the chart's upgrade job (below), so no
+    manual `kubectl apply` is needed on existing clusters.
 - kube-prometheus-stack is installed and upgraded with the chart's CRD upgrade
   job (`crds.upgradeJob.enabled=true`). `helm upgrade` does not update CRDs,
   so upgrading the chart to a new major version left the old CRDs in place.
@@ -35,6 +46,10 @@ All notable changes to this role are documented here. The format follows
 - Renovate opened at most 2 pull requests per hour, which with a weekly
   schedule meant 2 per week. The hourly limit is removed (`prHourlyLimit: 0`);
   at most 10 are open at a time.
+- The component versions in the README table and in `meta/argument_specs.yml`
+  were not updated with `defaults/main.yml`. The new
+  `.github/scripts/sync-defaults.sh` copies them; Renovate runs it after each
+  update, and CI fails when they differ (`sync-defaults.sh --check`).
 
 ## [3.5.0] - 2026-11-08
 
@@ -315,7 +330,13 @@ Read the upgrade notes below before running it against an existing cluster.
   registry on replicated Longhorn storage with offline staging of the Cilium
   chart and images.
 
-[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.1.1...HEAD
+[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.5.0...v3.6.0
+[3.5.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.4.1...v3.5.0
+[3.4.1]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.4.0...v3.4.1
+[3.4.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.3.0...v3.4.0
+[3.3.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.2.0...v3.3.0
+[3.2.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.1.1...v3.2.0
 [3.1.1]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.1.0...v3.1.1
 [3.1.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v2.1.1...v3.0.0

@@ -68,7 +68,11 @@ jobs:
             "$output/kubernetes-offline-stage-debs.sh" \
             "$output/kubernetes-offline-build-debs.sh" \
             tests/idempotence.sh \
-            .github/scripts/changelog.sh
+            .github/scripts/changelog.sh \
+            .github/scripts/sync-defaults.sh
+
+      - name: Check the pinned versions in README and argument specs
+        run: .github/scripts/sync-defaults.sh --check
 
   tag-release:
     name: Tag the newest changelog version

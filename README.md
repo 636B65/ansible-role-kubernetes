@@ -306,17 +306,17 @@ All components are pinned in `defaults/main.yml`:
 | Variable | Default |
 | --- | --- |
 | `kubernetes_version` | `1.36.5` |
-| `kubernetes_cilium_version` | `1.20.4` |
-| `kubernetes_cilium_cli_version` | `v0.20.1` |
+| `kubernetes_cilium_version` | `1.20.5` |
+| `kubernetes_cilium_cli_version` | `v0.20.3` |
 | `kubernetes_helm_version` | `v3.22.1` |
 | `kubernetes_longhorn_version` | `1.13.0` |
-| `kubernetes_metrics_server_version` | `v0.9.0` |
-| `kubernetes_prometheus_stack_version` | `92.14.0` |
+| `kubernetes_metrics_server_version` | `v0.9.1` |
+| `kubernetes_prometheus_stack_version` | `93.4.0` |
 | `kubernetes_headlamp_version` | `0.46.0` |
-| `kubernetes_traefik_version` | `42.3.0` |
+| `kubernetes_traefik_version` | `42.4.1` |
 | `kubernetes_cert_manager_version` | `v1.21.3` |
-| `kubernetes_argocd_version` | `10.12.1` |
-| `kubernetes_velero_version` | `12.2.3` |
+| `kubernetes_argocd_version` | `10.18.0` |
+| `kubernetes_velero_version` | `12.2.5` |
 | `kubernetes_velero_aws_plugin_version` | `v1.14.4` |
 
 Set a value to `latest` to resolve the newest stable release at runtime
