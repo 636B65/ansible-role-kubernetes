@@ -6,6 +6,19 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `LICENSE`: MIT, as `meta/main.yml` already declares.
+
+### Changed
+
+- CI hardening for OpenSSF Scorecard: every GitHub Action is pinned to a
+  commit SHA (the SLSA generator stays on its tag, as it requires), CI installs
+  ansible-core, ansible-lint and shellcheck-py from the hash-pinned
+  `.github/requirements/ci.txt` (kept up to date by Dependabot), and the
+  Renovate workflow grants its write permissions to its job instead of to the
+  whole workflow.
+
 ## [3.6.0] - 2026-11-18
 
 ### Added
