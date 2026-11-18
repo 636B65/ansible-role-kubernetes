@@ -3,6 +3,7 @@
   "extends": ["config:recommended"],
   "enabledManagers": ["custom.regex"],
   "vulnerabilityAlerts": { "enabled": false },
+  "prHourlyLimit": 0,
   "customManagers": [
     {
       "customType": "regex",

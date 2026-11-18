@@ -23,6 +23,12 @@ All notable changes to this role are documented here. The format follows
 - Renovate warned on every run that it cannot access vulnerability alerts:
   the workflow token cannot read Dependabot alerts, and they would not apply
   to the versions pinned in `defaults/main.yml`. The lookup is now off.
+- The Renovate workflow did not start the checks on Renovate's pull requests:
+  GitHub creates a `pull_request` run for them that waits for approval, and
+  the workflow counted it as a run. Runs waiting for approval no longer count.
+- Renovate opened at most 2 pull requests per hour, which with a weekly
+  schedule meant 2 per week. The hourly limit is removed (`prHourlyLimit: 0`);
+  at most 10 are open at a time.
 
 ## [3.5.0] - 2026-11-08
 
