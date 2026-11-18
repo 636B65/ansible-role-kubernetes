@@ -32,7 +32,7 @@ kubernetes_hosts_file_path: /etc/hosts
 # renovate: datasource=github-releases depName=kubernetes/kubernetes
 kubernetes_version: "1.36.5"
 # renovate: datasource=github-releases depName=cilium/cilium
-kubernetes_cilium_version: "1.20.4"
+kubernetes_cilium_version: "1.20.5"
 # renovate: datasource=github-releases depName=cilium/cilium-cli
 kubernetes_cilium_cli_version: "v0.20.1"
 # renovate: datasource=github-releases depName=helm/helm
