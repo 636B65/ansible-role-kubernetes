@@ -317,7 +317,7 @@ All components are pinned in `defaults/main.yml`:
 | `kubernetes_cert_manager_version` | `v1.21.3` |
 | `kubernetes_argocd_version` | `10.18.0` |
 | `kubernetes_velero_version` | `12.2.5` |
-| `kubernetes_velero_aws_plugin_version` | `v1.14.4` |
+| `kubernetes_velero_aws_plugin_version` | `v1.15.0` |
 
 Set a value to `latest` to resolve the newest stable release at runtime
 instead; this is not reproducible and is refused in offline mode. apt holds

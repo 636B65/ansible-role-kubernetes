@@ -54,7 +54,7 @@ kubernetes_argocd_version: "10.18.0"
 # renovate: datasource=helm registryUrl=https://vmware-tanzu.github.io/helm-charts depName=velero
 kubernetes_velero_version: "12.2.5"
 # renovate: datasource=docker depName=velero/velero-plugin-for-aws
-kubernetes_velero_aws_plugin_version: "v1.14.4"
+kubernetes_velero_aws_plugin_version: "v1.15.0"
 
 # Packages that apt must never upgrade outside the role's upgrade flow.
 kubernetes_held_packages:

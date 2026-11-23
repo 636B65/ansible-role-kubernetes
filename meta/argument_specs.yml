@@ -121,7 +121,7 @@ argument_specs:
       kubernetes_velero_aws_plugin_version:
         type: str
         description: Version of the Velero plugin for AWS (S3-compatible storage).
-        default: v1.14.4
+        default: v1.15.0
       kubernetes_held_packages:
         type: list
         description: Packages that apt holds outside the upgrade flow.
