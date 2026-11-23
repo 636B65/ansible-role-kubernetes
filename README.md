@@ -311,7 +311,7 @@ All components are pinned in `defaults/main.yml`:
 | `kubernetes_helm_version` | `v3.22.1` |
 | `kubernetes_longhorn_version` | `1.13.0` |
 | `kubernetes_metrics_server_version` | `v0.9.1` |
-| `kubernetes_prometheus_stack_version` | `93.4.0` |
+| `kubernetes_prometheus_stack_version` | `93.9.0` |
 | `kubernetes_headlamp_version` | `0.46.0` |
 | `kubernetes_traefik_version` | `42.4.1` |
 | `kubernetes_cert_manager_version` | `v1.21.3` |

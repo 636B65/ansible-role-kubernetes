@@ -97,7 +97,7 @@ argument_specs:
       kubernetes_prometheus_stack_version:
         type: str
         description: kube-prometheus-stack Helm chart version.
-        default: 93.4.0
+        default: 93.9.0
       kubernetes_headlamp_version:
         type: str
         description: Headlamp Helm chart version.
