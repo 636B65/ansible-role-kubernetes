@@ -113,7 +113,7 @@ argument_specs:
       kubernetes_argocd_version:
         type: str
         description: Argo CD (argo-cd) Helm chart version.
-        default: 10.18.0
+        default: 10.18.2
       kubernetes_velero_version:
         type: str
         description: Velero Helm chart version.
