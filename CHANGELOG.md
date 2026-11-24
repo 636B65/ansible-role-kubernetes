@@ -6,6 +6,8 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-11-24
+
 ### Added
 
 - `LICENSE`: MIT, as `meta/main.yml` already declares.
@@ -18,6 +20,16 @@ All notable changes to this role are documented here. The format follows
   `.github/requirements/ci.txt` (kept up to date by Dependabot), and the
   Renovate workflow grants its write permissions to its job instead of to the
   whole workflow.
+- Component updates:
+  - Argo CD chart 10.18.0 -> 10.18.2.
+  - kube-prometheus-stack chart 93.4.0 -> 93.9.0.
+- Renovate keeps velero-plugin-for-aws on v1.14.x: v1.15.x is for Velero 1.19,
+  but the pinned Velero chart (12.2.x) deploys Velero 1.18.
+
+### Fixed
+
+- The Velero test took the AWS plugin version from a hardcoded string, so
+  every plugin update failed CI.
 
 ## [3.6.0] - 2026-11-18
 
@@ -343,7 +355,8 @@ Read the upgrade notes below before running it against an existing cluster.
   registry on replicated Longhorn storage with offline staging of the Cilium
   chart and images.
 
-[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.6.0...HEAD
+[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.7.0...HEAD
+[3.7.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.4.1...v3.5.0
 [3.4.1]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.4.0...v3.4.1
