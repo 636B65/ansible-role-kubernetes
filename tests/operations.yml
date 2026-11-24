@@ -304,7 +304,7 @@
           - kubernetes_velero_values.deployNodeAgent
           - not kubernetes_velero_values.snapshotsEnabled
           - kubernetes_velero_values.configuration.defaultVolumesToFsBackup
-          - kubernetes_velero_values.initContainers[0].image == 'docker.io/velero/velero-plugin-for-aws:v1.14.4'
+          - kubernetes_velero_values.initContainers[0].image == 'docker.io/velero/velero-plugin-for-aws:' ~ kubernetes_velero_aws_plugin_version
           - kubernetes_velero_values.configuration.backupStorageLocation[0].config.region == 'minio'
           - kubernetes_velero_values.configuration.backupStorageLocation[0].config.s3Url == 'http://minio.lab.local:9000'
           - kubernetes_velero_values.configuration.backupStorageLocation[0].config.s3ForcePathStyle == 'true'
