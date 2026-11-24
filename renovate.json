@@ -36,6 +36,11 @@
       "matchDepNames": ["kubernetes/kubernetes"],
       "matchUpdateTypes": ["minor", "major"],
       "dependencyDashboardApproval": true
+    },
+    {
+      "description": "velero-plugin-for-aws must match the chart's Velero: v1.14.x is for Velero 1.18, which velero chart 12.2.x deploys (appVersion 1.18.2). Raise this with the chart when it moves to Velero 1.19.",
+      "matchDepNames": ["velero/velero-plugin-for-aws"],
+      "allowedVersions": "/^v1\\.14\\./"
     }
   ]
 }
