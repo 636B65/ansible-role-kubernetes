@@ -6,6 +6,16 @@ All notable changes to this role are documented here. The format follows
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-11-24
+
+### Added
+
+- `kubernetes_addons_extra_values`: more Helm values per add-on (`traefik`,
+  `cert-manager`, `argocd`, `velero`), merged recursively over the role's
+  values, for example a registry mirror for an image. Argo CD's Redis comes
+  from `ecr-public.aws.com`, which rate-limits anonymous pulls (`429 Too Many
+  Requests: Data limit exceeded`) on shared CI runners.
+
 ## [3.7.0] - 2026-11-24
 
 ### Added
@@ -355,7 +365,8 @@ Read the upgrade notes below before running it against an existing cluster.
   registry on replicated Longhorn storage with offline staging of the Cilium
   chart and images.
 
-[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.7.0...HEAD
+[Unreleased]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.8.0...HEAD
+[3.8.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.7.0...v3.8.0
 [3.7.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.6.0...v3.7.0
 [3.6.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.5.0...v3.6.0
 [3.5.0]: https://github.com/636B65/ansible-role-kubernetes/compare/v3.4.1...v3.5.0

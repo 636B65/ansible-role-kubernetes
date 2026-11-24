@@ -256,7 +256,7 @@ kubernetes_addons: >-
         'repo': 'https://traefik.github.io/charts',
         'version': kubernetes_traefik_version,
         'namespace': kubernetes_ingress_namespace,
-        'values': kubernetes_traefik_values,
+        'values': kubernetes_traefik_values | combine(kubernetes_addons_extra_values['traefik'] | default({}), recursive=True),
       },
       {
         'name': 'cert-manager',
@@ -265,7 +265,7 @@ kubernetes_addons: >-
         'repo': 'https://charts.jetstack.io',
         'version': kubernetes_cert_manager_version,
         'namespace': kubernetes_cert_manager_namespace,
-        'values': kubernetes_cert_manager_values,
+        'values': kubernetes_cert_manager_values | combine(kubernetes_addons_extra_values['cert-manager'] | default({}), recursive=True),
       },
       {
         'name': 'argocd',
@@ -274,7 +274,7 @@ kubernetes_addons: >-
         'repo': 'https://argoproj.github.io/argo-helm',
         'version': kubernetes_argocd_version,
         'namespace': kubernetes_argocd_namespace,
-        'values': kubernetes_argocd_values,
+        'values': kubernetes_argocd_values | combine(kubernetes_addons_extra_values['argocd'] | default({}), recursive=True),
       },
       {
         'name': 'velero',
@@ -283,7 +283,7 @@ kubernetes_addons: >-
         'repo': 'https://vmware-tanzu.github.io/helm-charts',
         'version': kubernetes_velero_version,
         'namespace': kubernetes_velero_namespace,
-        'values': kubernetes_velero_values,
+        'values': kubernetes_velero_values | combine(kubernetes_addons_extra_values['velero'] | default({}), recursive=True),
         'sensitive': true,
       },
     ]

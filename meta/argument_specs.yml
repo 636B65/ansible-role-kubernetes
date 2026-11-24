@@ -522,6 +522,12 @@ argument_specs:
         type: int
         description: HTTPS NodePort of the Argo CD server when the service type is NodePort.
         default: 30943
+      kubernetes_addons_extra_values:
+        type: dict
+        description: >-
+          More Helm values per add-on (traefik, cert-manager, argocd, velero),
+          merged recursively over the role's values, e.g. an image registry mirror.
+        default: {}
       kubernetes_velero_enabled:
         type: bool
         description: Install Velero for backups to S3-compatible storage.

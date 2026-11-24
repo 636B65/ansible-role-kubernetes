@@ -221,6 +221,16 @@ kubernetes_argocd_service_type: ClusterIP
 kubernetes_argocd_http_node_port: 30880
 kubernetes_argocd_https_node_port: 30943
 
+# More Helm values per add-on, merged (recursively) over the role's values,
+# keyed by add-on name: traefik, cert-manager, argocd, velero. For example a
+# registry mirror for an image:
+#   kubernetes_addons_extra_values:
+#     argocd:
+#       redis:
+#         image:
+#           repository: mirror.gcr.io/library/redis
+kubernetes_addons_extra_values: {}
+
 # Velero backs up the Kubernetes objects and, with its node agent, the data in
 # the volumes (file system backup with Kopia) to S3-compatible object storage,
 # such as MinIO or AWS S3. Needs a bucket the nodes can reach.

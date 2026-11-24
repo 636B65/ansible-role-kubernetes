@@ -150,6 +150,23 @@ Test a restore before you rely on the backups. The offline bundle includes the
 Velero chart, its images (with the AWS plugin) and the `kubectl` image its CRD
 upgrade job uses, when Velero is enabled while staging.
 
+## Extra Helm values
+
+`kubernetes_addons_extra_values` adds Helm values per add-on (`traefik`,
+`cert-manager`, `argocd`, `velero`), merged recursively over the values the role
+sets. For example, to pull Argo CD's Redis from a registry mirror:
+
+```yaml
+kubernetes_addons_extra_values:
+  argocd:
+    redis:
+      image:
+        repository: mirror.gcr.io/library/redis
+```
+
+The offline bundle build renders the charts with the same values, so it stages
+the images they name.
+
 ## NodePorts
 
 The role checks that the NodePorts of the registry (30500), Headlamp (30443

@@ -289,7 +289,18 @@
           - "kubernetes_argocd_values.server.service == {'type': 'NodePort', 'nodePortHttp': 30880, 'nodePortHttps': 30943}"
           - kubernetes_node_ports_in_use | sort == [30080, 30443, 30444, 30500, 30880, 30943]
           - kubernetes_node_ports_in_use | unique | length == 6
+          - >-
+            (kubernetes_addons_enabled | selectattr('name', 'equalto', 'argocd') | first)['values'].redis.image.repository
+            == 'mirror.gcr.io/library/redis'
+          - >-
+            (kubernetes_addons_enabled | selectattr('name', 'equalto', 'argocd') | first)['values'].dex.enabled
+            is sameas false
       vars:
+        kubernetes_addons_extra_values:
+          argocd:
+            redis:
+              image:
+                repository: mirror.gcr.io/library/redis
         kubernetes_ingress_enabled: true
         kubernetes_cert_manager_enabled: true
         kubernetes_argocd_enabled: true
