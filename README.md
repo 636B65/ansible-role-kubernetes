@@ -315,7 +315,7 @@ All components are pinned in `defaults/main.yml`:
 | `kubernetes_headlamp_version` | `0.46.0` |
 | `kubernetes_traefik_version` | `42.4.1` |
 | `kubernetes_cert_manager_version` | `v1.21.3` |
-| `kubernetes_argocd_version` | `10.18.0` |
+| `kubernetes_argocd_version` | `10.18.2` |
 | `kubernetes_velero_version` | `12.2.5` |
 | `kubernetes_velero_aws_plugin_version` | `v1.14.4` |
 
